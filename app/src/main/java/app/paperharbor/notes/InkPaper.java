@@ -61,7 +61,7 @@ final class InkPaper {
         if (layout == null || !text.equals(lastText) || lastWidth != wrapWidth || lastLines != lines) {
             layout = StaticLayout.Builder.obtain(text,0,text.length(),type,wrapWidth)
                     .setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false)
-                    .setBreakStrategy(Layout.BREAK_STRATEGY_SIMPLE).setMaxLines(lines).build();
+                    .setMaxLines(lines).build();
             lastText = text; lastWidth = wrapWidth; lastLines = lines;
         }
         int save=c.save();

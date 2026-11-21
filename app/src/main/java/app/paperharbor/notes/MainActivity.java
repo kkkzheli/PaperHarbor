@@ -132,7 +132,7 @@ public final class MainActivity extends Activity {
 
   private LinearLayout col() {
     LinearLayout l = new LinearLayout(this);
-    l.setOrientation(1);
+    l.setOrientation(LinearLayout.VERTICAL);
     return l;
   }
 
@@ -157,7 +157,7 @@ public final class MainActivity extends Activity {
   private void flex(LinearLayout host, View child) {
     host.addView(
         child,
-        host.getOrientation() == 1
+        host.getOrientation() == LinearLayout.VERTICAL
             ? new LinearLayout.LayoutParams(-1, 0, 1)
             : new LinearLayout.LayoutParams(0, -2, 1));
   }
