@@ -1,6 +1,8 @@
 """UI + cold start smoke test, on a dedicated airplane-mode emulator only.
 Run with Python 3: python -I tools/offline-smoke.py --adb <adb> --serial emulator-5554
 Creates one uniquely named synthetic notebook and removes only that book via the UI.
+--allow-device permits a physical test phone; it then checks the installed package
+requests no network permission instead of requiring airplane mode.
 """
 import argparse
 import re
@@ -14,14 +16,22 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--adb', default='adb')
     ap.add_argument('--serial', required=True)
+    ap.add_argument('--allow-device', action='store_true', help='Permit a physical phone; requires no network permission instead of airplane mode')
     args = ap.parse_args()
-    if not re.fullmatch(r'emulator-\d+', args.serial):
+    emulator = re.fullmatch(r'emulator-\d+', args.serial)
+    if not emulator and not args.allow_device:
         raise SystemExit('Use a dedicated emulator, not a personal phone.')
     def adb(*cmd):
         return subprocess.run([args.adb, '-s', args.serial, *cmd], check=True,
                               capture_output=True, timeout=25).stdout.decode('utf-8', errors='replace')
-    if adb('shell', 'settings', 'get', 'global', 'airplane_mode_on').strip() != '1':
-        raise SystemExit('Enable airplane mode on the test emulator first.')
+    if emulator:
+        if adb('shell', 'settings', 'get', 'global', 'airplane_mode_on').strip() != '1':
+            raise SystemExit('Enable airplane mode on the test emulator first.')
+    else:
+        dump = adb('shell', 'dumpsys', 'package', 'app.paperharbor.notes.debug')
+        if 'android.permission.INTERNET' in dump:
+            raise SystemExit('Installed app requests INTERNET; stop before testing.')
+        print('Physical device: installed package requests no INTERNET permission.')
     app = 'app.paperharbor.notes.debug'
     name = 'PH' + uuid.uuid4().hex[:10]
     word = 'Harbor' + uuid.uuid4().hex[:10]

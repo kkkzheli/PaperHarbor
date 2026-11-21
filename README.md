@@ -41,6 +41,6 @@ keytool -genkeypair -keystore D:\PrivateKeys\paperharbor.jks -alias paperharbor 
 python -I .\tools\verify-apk.py .\app\build\outputs\apk\debug\app-debug.apk --build-tools "$env:ANDROID_HOME\build-tools\34.0.0"
 ```
 
-仪器测试使用合成笔记：笔迹提交/撤销、可编辑备份恢复、PDF 导出后独立重读和像素核对、随包 OCR、最终权限。可在专用 Android 测试设备上运行 `connectedDebugAndroidTest`；`tools/offline-smoke.py` 另测飞行模式下的界面操作、强停重启和搜索。不要在个人资料上做自动化测试。
+仪器测试使用合成笔记：笔迹提交/撤销、可编辑备份恢复、PDF 导出后独立重读和像素核对、随包 OCR、最终权限。可在专用 Android 测试设备上运行 `connectedDebugAndroidTest`；`tools/offline-smoke.py` 测飞行模式下的界面操作、强停重启和搜索，`tools/layout-check.py` 检查横屏书写和 360 dp 布局。真机自动化会创建并删除带唯一名称的合成笔记，须由设备所有者明确同意（`--allow-device`），不要在别人的个人资料上运行。验收记录见 [`docs/verification-0.1.0.md`](docs/verification-0.1.0.md)。
 
 第三方 OCR 引擎、语言数据及其依赖适用各自许可，见仓库中的第三方说明。本仓库不包含真实用户笔记、录音、签名密钥或原 IPA。
