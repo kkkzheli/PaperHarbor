@@ -1,0 +1,65 @@
+PaperHarbor — offline printed-text OCR
+
+The APK includes an unmodified Android OCR engine and two unmodified language
+models. Pages and results are never sent to a service by this feature. There is
+no first-run download. OfflineOcr recognizes upright, printed Simplified Chinese
+and English; it is not a handwriting recognizer or an orientation detector.
+
+Engine: Tesseract4Android 4.9.0, Standard (not OpenMP)
+  Android wrapper: Copyright 2019 Adaptech s.r.o., Robert Pösel; includes work
+  originating in tess-two and Tesseract Tools for Android (Google Inc.).
+  License: Apache-2.0; see licenses/Tesseract4Android-LICENSE.txt.
+  Source and release instructions:
+    https://github.com/adaptech-cz/Tesseract4Android/tree/15c534717b1cb58261b58d4e4c1200c7f81f668c
+  Upstream-designated JitPack release artifact:
+    https://jitpack.io/cz/adaptech/tesseract4android/tesseract4android/4.9.0/tesseract4android-4.9.0.aar
+  Publisher's Gradle module metadata with artifact size and checksums:
+    https://jitpack.io/cz/adaptech/tesseract4android/tesseract4android/4.9.0/tesseract4android-4.9.0.module
+  SHA-256: bce5d6413a1a5ae3d7240033fbbc851ba3217d0a08d9769400e17a077f42cb2a
+  Size: 12,848,454 bytes. ABIs: arm64-v8a, armeabi-v7a, x86_64, x86.
+  The unmodified AAR is vendored in app/libs/. Its manifest declares no
+  permissions or components; it contains no libc++_shared.so.
+
+Native libraries in that release
+  The exact bundled sources for all four components are under:
+    https://github.com/adaptech-cz/Tesseract4Android/tree/15c534717b1cb58261b58d4e4c1200c7f81f668c/tesseract4android/src/main/cpp
+  - Tesseract OCR 5.5.1: Apache-2.0, licenses/Tesseract-and-models-Apache-2.0.txt.
+    https://github.com/tesseract-ocr/tesseract/tree/5.5.1
+  - Leptonica 1.85.0: BSD-2-Clause, licenses/Leptonica-LICENSE.txt.
+    https://github.com/DanBloomberg/leptonica/tree/1.85.0
+  - IJG libjpeg v9f: licenses/IJG-README.txt (including LEGAL ISSUES).
+    This software is based in part on the work of the Independent JPEG Group.
+    https://www.ijg.org/
+  - libpng 1.6.48: PNG Reference Library License, licenses/libpng-LICENSE.txt.
+    https://github.com/pnggroup/libpng/tree/v1.6.48
+  - Android NDK r27c / LLVM toolchain r522817c: see
+    licenses/Android-NDK-r27c-NOTICE.txt and licenses/Android-cpufeatures-LICENSE.txt.
+    https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+/refs/tags/ndk-r27c/clang-r522817c/NOTICE
+    https://android.googlesource.com/platform/ndk/+/refs/tags/ndk-r27c/sources/android/cpufeatures/cpu-features.c
+
+Language models: tesseract-ocr/tessdata_fast
+  All data in this upstream repository is licensed under Apache-2.0.
+    https://github.com/tesseract-ocr/tessdata_fast/blob/87416418657359cb625c412a48b6e1d6d41c29bd/README.md
+    https://github.com/tesseract-ocr/tessdata_fast/blob/87416418657359cb625c412a48b6e1d6d41c29bd/LICENSE
+  The full license is in licenses/Tesseract-and-models-Apache-2.0.txt.
+  Both files were verified against the Git blobs in the pinned commit tree.
+  chi_sim.traineddata, 2,469,156 bytes
+    https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/chi_sim.traineddata
+    SHA-256: a5fcb6f0db1e1d6d8522f39db4e848f05984669172e584e8d76b6b3141e1f730
+  eng.traineddata, 4,113,088 bytes
+    https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/eng.traineddata
+    SHA-256: 7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2
+
+Build and runtime
+  Apply 'ocr.gradle' in the app module. It adds the local AAR and verifies the
+  three SHA-256 pins before a build; it does not fetch or run anything from
+  those URLs. No additional repository, Android permission, API key or service
+  is required. The app calls OfflineOcr.recognize(Context, Bitmap) off the UI
+  thread. Pass an upright software bitmap and bound any source render/decode
+  before calling: OCR cannot undo the caller's allocation. The JNI input is
+  capped at 5,000,000 pixels and 3,200 pixels on either edge. Each call creates
+  and releases one native engine; processing is serialized and the caller keeps
+  ownership of its bitmap. Only the verified models are copied on demand to
+  noBackupFilesDir/offline-ocr/tessdata/; this feature writes no page images or
+  recognition results to disk. Errors are reported rather than faking text or
+  falling back to a network provider.

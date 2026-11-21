@@ -1,0 +1,10 @@
+* text=auto
+*.java text eol=lf
+*.gradle text eol=lf
+*.py text eol=lf
+/gradlew text eol=lf
+*.bat text eol=crlf
+*.jar binary
+*.aar binary
+*.traineddata binary
+*.m4a binary

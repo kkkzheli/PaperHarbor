@@ -1,0 +1,23 @@
+plugins { id 'com.android.application' }
+apply from: 'ocr.gradle'
+
+android {
+    namespace 'app.paperharbor.notes'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'app.paperharbor.notes'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '0.1.0'
+        testInstrumentationRunner 'android.test.InstrumentationTestRunner'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    useLibrary 'android.test.runner', false
+    useLibrary 'android.test.base', false
+    useLibrary 'android.test.mock', false
+    buildTypes { debug { applicationIdSuffix '.debug' } }
+}
