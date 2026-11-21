@@ -5,6 +5,5 @@
         <item name="android:statusBarColor">@color/window_bg</item>
         <item name="android:navigationBarColor">@color/window_bg</item>
         <item name="android:colorAccent">#FFE4815B</item>
-        <item name="android:forceDarkAllowed">false</item>
     </style>
 </resources>

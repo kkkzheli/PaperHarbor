@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon layer (Android 13+): a single-colour silhouette of the boat. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:pivotX="54" android:pivotY="50" android:scaleX="0.95" android:scaleY="0.95">
+        <path
+            android:fillColor="#FF000000"
+            android:pathData="M45,33 C36,41 28,52 25,64 L47,69 Z" />
+        <path
+            android:fillColor="#FF000000"
+            android:pathData="M63,33 C72,41 80,52 83,64 L61,69 Z" />
+        <path
+            android:fillColor="#FF000000"
+            android:pathData="M54,21 L70,67 L54,73 L38,67 Z" />
+        <path
+            android:fillColor="#FF000000"
+            android:pathData="M17,55 L47,80 C52,84 56,84 61,80 L91,55 L72,63 L54,70 L36,63 Z" />
+    </group>
+</vector>
