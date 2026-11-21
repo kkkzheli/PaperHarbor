@@ -99,6 +99,8 @@ public final class InkView extends View {
     }
     public boolean undo() { return rewind(past,future); }
     public boolean redo() { return rewind(future,past); }
+    public boolean canUndo() { return page!=null && !past.isEmpty(); }
+    public boolean canRedo() { return page!=null && !future.isEmpty(); }
 
     private boolean rewind(ArrayDeque<List<Item>> from, ArrayDeque<List<Item>> to) {
         discardGesture(); invalidate();
@@ -154,7 +156,7 @@ public final class InkView extends View {
     private float pageY(float y) { return InkStroke.clamp((y-oy)/scale,0,h); }
 
     @Override protected void onDraw(Canvas c) {
-        super.onDraw(c); c.drawColor(0xffe6e8eb);
+        super.onDraw(c); c.drawColor(0xffe7e0d3);
         if (!geometry()) return;
         int save=c.save();
         try {
