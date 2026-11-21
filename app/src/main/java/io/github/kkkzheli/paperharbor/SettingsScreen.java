@@ -209,6 +209,12 @@ final class SettingsScreen extends android.widget.FrameLayout {
     about.setBackground(Ui.round(a, Ui.SURFACE, 18));
     about.setPadding(Ui.dp(a, 4), Ui.dp(a, 4), Ui.dp(a, 4), Ui.dp(a, 4));
     about.addView(aboutHeader());
+    TextView intro = Ui.text(a,
+        "纸港由 kkkzheli 独立设计与实现：不登录、不联网、不上传，笔迹、文字、闪卡和录音"
+            + "只保存在这台设备上。它与 Goodnotes 无从属或授权关系。", 12.5f, Ui.MUTED);
+    intro.setPadding(Ui.dp(a, 16), 0, Ui.dp(a, 16), Ui.dp(a, 14));
+    intro.setLineSpacing(Ui.dp(a, 3), 1f);
+    about.addView(intro);
     about.addView(Ui.iconRow(a, R.drawable.ic_person, "作者 kkkzheli", false,
         () -> open(AUTHOR_URL)));
     about.addView(Ui.iconRow(a, R.drawable.ic_link, "项目主页 · GitHub", false,

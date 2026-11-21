@@ -302,6 +302,10 @@ final class Str {
     put("清空最近使用颜色", "Clear recent colours");
     put("已清空最近颜色", "Recent colours cleared");
     put("关于", "ABOUT");
+    put("纸港由 kkkzheli 独立设计与实现：不登录、不联网、不上传，笔迹、文字、闪卡和录音"
+            + "只保存在这台设备上。它与 Goodnotes 无从属或授权关系。",
+        "PaperHarbor is designed and built by kkkzheli: no sign-in, no network, no uploads — ink, "
+            + "text, flashcards and recordings stay on this device. It is not affiliated with Goodnotes.");
     put("作者 kkkzheli", "Made by kkkzheli");
     put("项目主页 · GitHub", "Project on GitHub");
     put("离线与隐私", "Offline and privacy");
