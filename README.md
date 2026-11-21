@@ -1,56 +1,87 @@
-# 纸港 · PaperHarbor
+# PaperHarbor · 纸港
 
-一款不需要账号、网络或 API Key 的 Android 笔记本。界面以图标为主：书架用封面缩略图展示笔记，编辑器是可收起的图标工具栏，调色盘提供色轮、亮度和可长按保存的色位，笔尖粗细带有实时笔触预览。所有笔记、识别文本和录音都只保存在应用私有目录；应用不声明 `INTERNET` 或 `ACCESS_NETWORK_STATE`。支持 Android 8.0（API 26）及以上。
+[English](README.md) · **简体中文**
 
-| 书架 | 编辑器 | 调色盘 |
-|---|---|---|
-| ![书架](docs/screenshots/library.png) | ![编辑器](docs/screenshots/editor.png) | ![调色盘](docs/screenshots/palette.png) |
+A notebook for Android that needs no account, no network and no key. Everything is drawn, typed,
+recognised and recorded on the device, and the app declares neither `INTERNET` nor
+`ACCESS_NETWORK_STATE`.
 
-## 功能
+PaperHarbor 1.0 is an independent implementation by **kkkzheli**. It is not affiliated with,
+licensed by, or derived from Goodnotes; no code, artwork or subscription from that product is used.
 
-- **书架**：封面缩略图、标题与页数、页内文字搜索、导入 PDF/图片/备份。长按笔记可重命名、导出 PDF、备份或删除。
-- **书写**：画笔、荧光笔、橡皮擦、套索、直线、矩形，触控笔压感、双指平移缩放、撤销/重做。工具栏用原创矢量图标，选中状态清晰。
-- **调色盘**：色相/饱和度色轮与亮度滑杆；8 个可长按保存的色位，以及最近使用颜色。选色即时生效。
-- **笔尖**：滑杆和四个尺寸预设，上方实时预览当前颜色与粗细；橡皮擦使用同一面板调整大小。
-- **页面**：缩略图页面网格、当前页高亮、书签标记；添加横线/方格/空白页，复制、前后移动或删除页面。
-- **资料导入**：从本地导入 PDF 或图片，在原页面上批注。页内可添加键入文字；离线 OCR 支持横排简体中文与英文的印刷文字，识别结果可核对后保存并参与书架搜索。
-- **学习与录音**：双面闪卡、自评复习；只在主动点击时申请麦克风，录音保存在本机，可回听或删除。
-- **本地备份**：`.phnote` 是可编辑备份，包含笔迹、文字、闪卡和录音；在书架导入后恢复为新笔记，不覆盖原件。换设备时请自行拷贝备份。
+## What it does
 
-**卸载前请自行在本地导出备份。** 没有后台云备份；`.phnote` 不加密，含笔记和录音，请自行妥善保管。系统选文件时使用 `EXTRA_LOCAL_ONLY`，但无法控制用户之后用其他应用分享已导出的文件。
+- **Shelf** — cover thumbnails, title, page count and date for every notebook; search across
+  titles, typed page text and recognised text; import PDF, images or a PaperHarbor backup; sort by
+  recently edited, title or page count.
+- **Pens** — a hard pen with pressure taper, a soft brush whose width follows speed and pressure,
+  and a translucent highlighter. Tapping the active pen button opens the chooser and the width
+  slider with a live sample.
+- **Eraser** — remove whole strokes, or erase only the area you sweep across. Both modes share a
+  radius control with a preview.
+- **Shapes and the magic pen** — line, arrow, rectangle, circle, ellipse, triangle, diamond,
+  pentagon, star and hexagon from one chooser; the magic pen turns a rough sketch into a straight
+  line, a circle, an ellipse, a rectangle or a triangle, and keeps your own stroke when nothing
+  matches.
+- **Lasso** — select strokes, then drag to move, pull a corner to scale proportionally, or use the
+  grip above the selection to rotate. A small bubble offers duplicate and delete, and *Select all
+  ink* lives in the More sheet.
+- **Palette** — hue/saturation wheel with a separate brightness slider, eight swatches that can be
+  long-pressed to store the current colour, and a recent-colours row.
+- **Pages** — thumbnail grid, bookmarks, ruled/grid/blank templates, duplicate, reorder, delete,
+  and jump to the next bookmark.
+- **Text and OCR** — typed page text is searchable; printed horizontal Simplified Chinese and
+  English are recognised on-device by Tesseract4Android with the bundled `chi_sim` and `eng` models.
+- **Study and audio** — two-sided flashcards with self-rating, and local AAC recordings that can be
+  replayed or removed. The microphone is requested only when you start recording.
+- **Export and backup** — PDF, a single page as PNG, or a `.phnote` archive that keeps ink, text,
+  cards and recordings editable. Restoring creates a new notebook and never overwrites the original.
+- **Settings** — light, dark or system theme, stylus-only drawing, pressure sensitivity, area-erase
+  default, paper for new notes, local storage usage, and links to the author and this project.
+- **Languages** — Simplified Chinese and English, following the device language.
 
-## 边界
+## Boundaries
 
-独立实现，与 Goodnotes 无从属或授权关系。没有使用原 IPA 的代码或素材，不读取或继承任何订阅。**不导入 `.goodnotes` 私有笔迹文档**；旧资料可先导出为 PDF 再批注。不提供账号、云同步、多人协作、内容商店、远程 AI、Office 转换、笔迹同步录音回放或语音转写。普通 PDF 导出会把页面和批注合成，不能替代可编辑备份；OCR 文本不会作为隐藏文字层写入导出的 PDF。界面图标为本项目原创的矢量资源。
+- `.goodnotes` documents are **not** imported. Export old material to PDF and annotate that.
+- No account, cloud sync, collaboration, content store, remote AI, Office conversion, synced
+  handwriting playback or speech transcription.
+- A PDF export flattens pages and annotations; it is not a substitute for the editable `.phnote`
+  backup. OCR text is not written as an invisible text layer into exported PDFs.
+- **Export a backup before uninstalling.** There is no cloud copy, and `.phnote` is not encrypted —
+  it contains your writing and recordings, so store it carefully.
 
-## 安装与签名
+## Install
 
-从仓库 Releases 下载 `PaperHarbor-0.2.0-debug.apk` 可直接侧载，使用测试签名，包名 `app.paperharbor.notes.debug`。`PaperHarbor-0.2.0-unsigned.apk` 是待**自行签名**的正式构建，包名 `app.paperharbor.notes`，未签名时不能安装。两者可并存但不共用数据，请用 `.phnote` 迁移笔记。
+Download `PaperHarbor-1.0.0.apk` from the releases page and sideload it. It is a release build
+(`debuggable=false`) signed with a locally generated key; the package is
+`io.github.kkkzheli.paperharbor` and Android 8.0 (API 26) or newer is required.
 
-正式密钥只在自己的电脑生成、备份和使用；不要上传 keystore，密码由签名工具交互式读取。
+The signing key and its password are never uploaded — only the public certificate travels inside
+the APK. To build your own copy with your own key, see [docs/building.md](docs/building.md) and the
+wiki page *Build and signing*.
+
+## Build
+
+Requires JDK 17 or newer, Android SDK Platform 34 and Build Tools 34, with `ANDROID_HOME` or a
+`sdk.dir` entry in `local.properties`.
 
 ```powershell
-keytool -genkeypair -keystore D:\PrivateKeys\paperharbor.jks -alias paperharbor -keyalg RSA -keysize 3072 -validity 10000
+.\gradlew.bat --offline assembleDebug assembleRelease
 ```
 
 ```powershell
-.\tools\sign-local.ps1 -Keystore D:\PrivateKeys\paperharbor.jks -Alias paperharbor -Unsigned .\PaperHarbor-0.2.0-unsigned.apk
+python -I .\tools\verify-apk.py .\app\build\outputs\apk\release\app-release.apk --build-tools "$env:ANDROID_HOME\build-tools\34.0.0"
 ```
 
-首次命令需要目标目录已经存在。脚本不存密码，不向任何网站发送文件；会验证签名、输出成品 SHA-256，并拒绝覆盖现有成品。后续更新应继续使用同一签名证书。
+`verify-apk.py` fails unless the packaged permissions are exactly `RECORD_AUDIO`, checks the
+signature and prints the SHA-256. Instrumentation tests run on a dedicated device or emulator with
+`connectedDebugAndroidTest`; `tools/offline-smoke.py` drives the real UI in airplane mode and
+`tools/layout-check.py` checks portrait, landscape and 360 dp. Acceptance notes for this build are
+in [docs/verification-1.0.0.md](docs/verification-1.0.0.md).
 
-## 构建与复验
+## Licence and attribution
 
-需要 JDK 17 或 21、Android SDK Platform 34、Build Tools 34 和可用的 Android SDK 路径（`ANDROID_HOME` 或本机 `local.properties`）。Gradle 包装器固定 8.9 并校验发行包摘要。首次准备构建工具/Android Gradle Plugin 可能需要联网；**这不是 APK 的运行要求**。构建工具缓存就绪后：
-
-```powershell
-.\gradlew.bat --offline assembleDebug assembleRelease assembleDebugAndroidTest
-```
-
-```powershell
-python -I .\tools\verify-apk.py .\app\build\outputs\apk\debug\app-debug.apk --build-tools "$env:ANDROID_HOME\build-tools\34.0.0"
-```
-
-仪器测试使用合成笔记：笔迹提交/撤销、可编辑备份恢复、PDF 导出后独立重读和像素核对、随包 OCR、最终权限。可在专用 Android 测试设备上运行 `connectedDebugAndroidTest`；`tools/offline-smoke.py` 测飞行模式下的界面操作、强停重启和搜索，`tools/layout-check.py` 检查横竖屏书写和 360 dp 布局。真机自动化会创建并删除带唯一名称的合成笔记，须由设备所有者明确同意（`--allow-device`），不要在别人的个人资料上运行。验收记录见 [`docs/verification-0.2.0.md`](docs/verification-0.2.0.md)。
-
-第三方 OCR 引擎、语言数据及其依赖适用各自许可，见 `app/src/main/assets/ocr/NOTICE.txt` 与 `licenses/`。本仓库不包含真实用户笔记、录音、签名密钥或原 IPA。
+Application code, vector icons and the launcher artwork are original work by **kkkzheli**. The OCR
+engine, its language data and their dependencies keep their own licences — see
+`app/src/main/assets/ocr/NOTICE.txt` and the `licenses/` folder. This repository contains no real
+user notes, no recordings, no signing keys and no copy of the original iOS app.

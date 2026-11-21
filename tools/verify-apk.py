@@ -21,7 +21,7 @@ def main():
     if set(names) != {'android.permission.RECORD_AUDIO'}:
         raise SystemExit(f'Unexpected permission set: {names}')
     declared = re.search(r"^package: name='([^']+)'", manifest, re.M).group(1)
-    if declared not in ('app.paperharbor.notes', 'app.paperharbor.notes.debug'):
+    if declared not in ('io.github.kkkzheli.paperharbor', 'io.github.kkkzheli.paperharbor.debug'):
         raise SystemExit('Unexpected package: ' + declared)
     if not args.unsigned: tool('apksigner', 'verify', '--verbose')
     print(f'{declared}: microphone only; no INTERNET or network-state permission; ' + ('unsigned release check' if args.unsigned else 'signature verified'))

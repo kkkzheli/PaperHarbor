@@ -17,6 +17,7 @@ def main():
     ap.add_argument('--adb', default='adb')
     ap.add_argument('--serial', required=True)
     ap.add_argument('--allow-device', action='store_true')
+    ap.add_argument('--package', default='io.github.kkkzheli.paperharbor')
     args = ap.parse_args()
     if not re.fullmatch(r'emulator-\d+', args.serial) and not args.allow_device:
         raise SystemExit('Use a dedicated emulator or pass --allow-device.')
@@ -96,7 +97,7 @@ def main():
     original_rotation = shell('settings', 'get', 'system', 'user_rotation').strip()
     original_accel = shell('settings', 'get', 'system', 'accelerometer_rotation').strip()
     try:
-        shell('am', 'start', '-W', '-n', 'app.paperharbor.notes.debug/app.paperharbor.notes.MainActivity')
+        shell('am', 'start', '-W', '-n', args.package + '/io.github.kkkzheli.paperharbor.MainActivity')
         if find(**{'content-desc': '笔记画布'}) is not None:
             tap(wait(**{'content-desc': '返回书架'}))
             wait(**{'content-desc': '新建笔记'})
@@ -149,7 +150,7 @@ def main():
         shell('wm', 'size', 'reset')
         shell('wm', 'density', 'reset')
         time.sleep(1.5)
-        shell('am', 'start', '-W', '-n', 'app.paperharbor.notes.debug/app.paperharbor.notes.MainActivity')
+        shell('am', 'start', '-W', '-n', args.package + '/io.github.kkkzheli.paperharbor.MainActivity')
         tap(wait(**{'class': 'android.widget.EditText'}))
         clear_field()
         shell('input', 'text', name)

@@ -1,15 +1,19 @@
 plugins { id 'com.android.application' }
 apply from: 'ocr.gradle'
 
+def localProps = new Properties()
+def localFile = rootProject.file('local.properties')
+if (localFile.exists()) localFile.withInputStream { localProps.load(it) }
+
 android {
-    namespace 'app.paperharbor.notes'
+    namespace 'io.github.kkkzheli.paperharbor'
     compileSdk 34
     defaultConfig {
-        applicationId 'app.paperharbor.notes'
+        applicationId 'io.github.kkkzheli.paperharbor'
         minSdk 26
         targetSdk 34
-        versionCode 2
-        versionName '0.2.0'
+        versionCode 3
+        versionName '1.0.0'
         testInstrumentationRunner 'android.test.InstrumentationTestRunner'
     }
     compileOptions {
@@ -19,5 +23,24 @@ android {
     useLibrary 'android.test.runner', false
     useLibrary 'android.test.base', false
     useLibrary 'android.test.mock', false
-    buildTypes { debug { applicationIdSuffix '.debug' } }
+    signingConfigs {
+        release {
+            // Local signing only. The keystore and its password live in local.properties,
+            // which is never committed; the published APK carries only the public certificate.
+            if (localProps.containsKey('ph.storeFile')) {
+                storeFile file(localProps['ph.storeFile'])
+                storePassword localProps['ph.storePassword']
+                keyAlias localProps['ph.keyAlias']
+                keyPassword localProps['ph.keyPassword']
+            }
+        }
+    }
+    buildTypes {
+        debug { applicationIdSuffix '.debug' }
+        release {
+            minifyEnabled false
+            debuggable false
+            if (localProps.containsKey('ph.storeFile')) signingConfig signingConfigs.release
+        }
+    }
 }

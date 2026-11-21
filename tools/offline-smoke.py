@@ -18,6 +18,7 @@ def main():
     ap.add_argument('--adb', default='adb')
     ap.add_argument('--serial', required=True)
     ap.add_argument('--allow-device', action='store_true')
+    ap.add_argument('--package', default='io.github.kkkzheli.paperharbor')
     args = ap.parse_args()
     if not re.fullmatch(r'emulator-\d+', args.serial) and not args.allow_device:
         raise SystemExit('Use a dedicated emulator or pass --allow-device.')
@@ -29,10 +30,10 @@ def main():
         if shell('settings', 'get', 'global', 'airplane_mode_on').strip() != '1':
             raise SystemExit('Enable airplane mode on the test emulator first.')
     else:
-        if 'android.permission.INTERNET' in shell('dumpsys', 'package', 'app.paperharbor.notes.debug'):
+        if 'android.permission.INTERNET' in shell('dumpsys', 'package', args.package):
             raise SystemExit('Installed app requests INTERNET; stop before testing.')
         print('Physical device: installed package requests no INTERNET permission.')
-    app = 'app.paperharbor.notes.debug'
+    app = args.package
     name = 'PH' + uuid.uuid4().hex[:10]
     word = 'Harbor' + uuid.uuid4().hex[:10]
 
@@ -87,7 +88,7 @@ def main():
             shell('input', 'keyevent', '67')
 
     def start():
-        shell('am', 'start', '-W', '-n', app + '/app.paperharbor.notes.MainActivity')
+        shell('am', 'start', '-W', '-n', app + '/io.github.kkkzheli.paperharbor.MainActivity')
 
     def create_note():
         tap(wait(**{'content-desc': '新建笔记'}))
