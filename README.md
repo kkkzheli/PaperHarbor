@@ -111,7 +111,7 @@ python -I .\tools\verify-apk.py .\app\build\outputs\apk\release\app-release.apk 
 signature and prints the SHA-256. Instrumentation tests run on a dedicated device or emulator with
 `connectedDebugAndroidTest`; `tools/offline-smoke.py` drives the real UI in airplane mode and
 `tools/layout-check.py` checks portrait, landscape and 360 dp. Acceptance notes for this build are
-in [docs/verification-1.1.2.md](docs/verification-1.1.1.md).
+in [docs/verification-1.1.2.md](docs/verification-1.1.2.md).
 
 ## Licence and attribution
 

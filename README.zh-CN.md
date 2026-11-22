@@ -91,7 +91,7 @@ python -I .\tools\verify-apk.py .\app\build\outputs\apk\release\app-release.apk 
 `verify-apk.py` 会核对实际打包的权限是否恰好只有 `RECORD_AUDIO`、验证签名并输出 SHA-256。
 仪器测试在专用设备或模拟器上用 `connectedDebugAndroidTest` 运行；`tools/offline-smoke.py`
 在飞行模式下驱动真实界面，`tools/layout-check.py` 检查竖屏、横屏与 360 dp。本次构建的验收记录见
-[docs/verification-1.1.2.md](docs/verification-1.1.1.md)。
+[docs/verification-1.1.2.md](docs/verification-1.1.2.md)。
 
 ## 许可与署名
 
