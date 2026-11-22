@@ -306,9 +306,12 @@ final class LibraryScreen extends FrameLayout {
         });
         CoverArt cover = new CoverArt(a);
         frame.addView(cover, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        TextView badge = Ui.text(a, "", 10, Ui.INK);
-        badge.setBackground(Ui.round(a, 0xe6fffdf6, 9));
-        badge.setPadding(Ui.dp(a, 7), Ui.dp(a, 3), Ui.dp(a, 7), Ui.dp(a, 3));
+        // The badge sits on the paper thumbnail, which is light in both themes; a solid dark
+        // pill keeps it readable instead of a pale chip that disappears into the page.
+        TextView badge = Ui.text(a, "", 10.5f, 0xfffffdf6);
+        badge.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        badge.setBackground(Ui.round(a, 0xd91a2b26, 9));
+        badge.setPadding(Ui.dp(a, 8), Ui.dp(a, 3), Ui.dp(a, 8), Ui.dp(a, 3));
         FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         blp.gravity = Gravity.END | Gravity.BOTTOM;
         blp.setMargins(0, 0, Ui.dp(a, 8), Ui.dp(a, 8));

@@ -107,23 +107,43 @@ final class InkStroke {
     private float radius(int i) { return width * .5f * factor(i); }
 
     private float lastFactor = 1f;
+    private long lastTime;
+    private float speed;
 
     /**
      * Live input. The brush turns stroke speed and pressure into its stored width factor; the
      * factor is low-pass filtered so a change of speed reads as a swell rather than a step.
+     *
+     * <p>Speed is measured from the event timestamps, not from the distance between two samples.
+     * Touch panels report samples every few milliseconds, so a per-sample distance is tiny even
+     * during a fast flick and the brush would read as "slow" for every stroke — which is why it
+     * used to look exactly like the hard pen.
      */
-    void sample(float x, float y, float p) {
+    void sample(float x, float y, float p) { sample(x, y, p, 0); }
+
+    void sample(float x, float y, float p, long time) {
         if ("brush".equals(tool)) {
-            float target;
-            if (p < .999f) target = .68f + .52f * p;             // real stylus pressure
-            else {
-                double speed = count == 0 ? 4 : Math.hypot(x - x(count-1), y - y(count-1));
-                // A loaded brush swells when it moves slowly and thins out at speed, but the
-                // range stays narrow enough that a thick stroke keeps an even body.
-                target = (float)(.78 + .42 / (1 + speed * .55));
+            if (count > 0 && time > 0 && lastTime > 0) {
+                long dt = time - lastTime;
+                if (dt > 0 && dt < 400) {
+                    double distance = Math.hypot(x - x(count-1), y - y(count-1));
+                    float instant = (float)(distance * 1000.0 / dt);
+                    speed = speed <= 0 ? instant : speed * .80f + instant * .20f;
+                }
             }
-            lastFactor = count == 0 ? target : lastFactor * .88f + target * .12f;
-            p = clamp(lastFactor, .45f, 1.32f);
+            if (time > 0) lastTime = time;
+            float target;
+            if (p < .999f) target = .55f + .85f * p;                   // real stylus pressure
+            else {
+                // About 1.40× when moving slowly, 0.75× in a fast flick, 1.0× around a
+                // comfortable writing pace of 500 page units per second.
+                target = .60f + .80f / (1f + speed / 500f);
+            }
+            // The first sample has no speed yet; starting neutral avoids a fat blob where the
+            // brush lands and then thins out as the hand gets moving.
+            lastFactor = count == 0 ? (p < .999f ? target : 1f)
+                : lastFactor * .90f + target * .10f;
+            p = clamp(lastFactor, .50f, 1.45f);
             lastFactor = p;
         }
         sampleRaw(x, y, p);
@@ -147,19 +167,19 @@ final class InkStroke {
     /** Softens the ends and evens out the width and centreline before the stroke is committed. */
     void taper() {
         if (count < 4 || isShape() || "marker".equals(tool)) { dirty = true; return; }
-        smoothValues("brush".equals(tool) ? 3 : 2);
+        smoothValues("brush".equals(tool) ? 4 : 2);
         if ("brush".equals(tool)) {
-            // A brush is put down and lifted gradually. Ramping the first and last samples over a
-            // longer stretch keeps a thick stroke rounded instead of ending in a needle.
-            int head = Math.min(6, Math.max(1, count / 3));
+            // A brush is put down and lifted gradually. The ramps are proportional to the
+            // number of samples so a quick flick does not turn into one long thin needle.
+            int head = Math.min(6, Math.max(1, count / 8));
             for (int i = 0; i < head; i++) {
                 float t = (i + 1f) / head;
-                xyz[3*i + 2] *= .62f + .38f * t;
+                xyz[3*i + 2] *= .55f + .45f * t;
             }
-            int tail = Math.min(10, Math.max(2, count / 3));
+            int tail = Math.min(10, Math.max(2, count / 6));
             for (int k = 0; k < tail; k++) {
                 float t = 1f - (k + 1f) / tail;
-                xyz[3*(count - tail + k) + 2] *= .52f + .48f * t;
+                xyz[3*(count - tail + k) + 2] *= .45f + .55f * t;
             }
         } else {
             int[] head = {0, 1};
@@ -168,7 +188,9 @@ final class InkStroke {
             float[] scale = {.75f, .58f, .4f};
             for (int i = 0; i < tail.length; i++) xyz[3*tail[i] + 2] *= scale[i];
         }
-        smoothPoints();
+        // The brush is a soft medium: extra passes round off the corners that sparse touch
+        // samples leave in a thick curve, while the pen keeps its crisp corners.
+        smoothPoints("brush".equals(tool) ? 4 : 2);
         dirty = true;
     }
 
@@ -184,11 +206,11 @@ final class InkStroke {
         }
     }
 
-    /** Two gentle passes over interior samples only; the endpoints never move. */
-    private void smoothPoints() {
+    /** Gentle passes over interior samples only; the endpoints never move. */
+    private void smoothPoints(int passes) {
         if (count < 3) return;
         float[] px = new float[count], py = new float[count];
-        for (int pass = 0; pass < 2; pass++) {
+        for (int pass = 0; pass < passes; pass++) {
             for (int i = 0; i < count; i++) {
                 if (i == 0 || i == count - 1) { px[i] = x(i); py[i] = y(i); }
                 else {
@@ -223,21 +245,54 @@ final class InkStroke {
             path.addCircle(x(0), y(0), Math.max(.05f, radius(0)), Path.Direction.CW);
             return;
         }
+        boolean brush = "brush".equals(tool);
+        float[] px = new float[n], py = new float[n], pr = new float[n];
+        for (int i = 0; i < n; i++) {
+            px[i] = x(i); py[i] = y(i); pr[i] = radius(i);
+        }
+        // A thick brush drawn from sparse samples is a chain of straight facets. Refine the
+        // centreline with Chaikin corner cutting, keeping both endpoints, so a curve stays a
+        // curve even when the touch panel reported only a few points.
+        if (brush && n >= 3) {
+            float length = 0;
+            for (int i = 1; i < n; i++) length += (float)Math.hypot(px[i] - px[i-1], py[i] - py[i-1]);
+            float average = length / Math.max(1, n - 1);
+            int rounds = average > 8 ? 2 : average > 3 ? 1 : 0;
+            for (int round = 0; round < rounds; round++) {
+                int m = px.length;
+                float[] nx = new float[2 * m], ny = new float[2 * m], nr = new float[2 * m];
+                nx[0] = px[0]; ny[0] = py[0]; nr[0] = pr[0];
+                int k = 1;
+                for (int i = 0; i < m - 1; i++) {
+                    nx[k] = px[i] * .75f + px[i+1] * .25f;
+                    ny[k] = py[i] * .75f + py[i+1] * .25f;
+                    nr[k] = pr[i] * .75f + pr[i+1] * .25f;
+                    k++;
+                    nx[k] = px[i] * .25f + px[i+1] * .75f;
+                    ny[k] = py[i] * .25f + py[i+1] * .75f;
+                    nr[k] = pr[i] * .25f + pr[i+1] * .75f;
+                    k++;
+                }
+                nx[k] = px[m-1]; ny[k] = py[m-1]; nr[k] = pr[m-1];
+                px = nx; py = ny; pr = nr;
+            }
+            n = px.length;
+        }
         float[] lx = new float[n], ly = new float[n], rx = new float[n], ry = new float[n];
         for (int i = 0; i < n; i++) {
             float inx, iny, outx, outy;
-            if (i == 0) { inx = outx = x(1) - x(0); iny = outy = y(1) - y(0); }
+            if (i == 0) { inx = outx = px[1] - px[0]; iny = outy = py[1] - py[0]; }
             else if (i == n - 1) {
-                inx = outx = x(n-1) - x(n-2); iny = outy = y(n-1) - y(n-2);
+                inx = outx = px[n-1] - px[n-2]; iny = outy = py[n-1] - py[n-2];
             } else {
-                inx = x(i) - x(i-1); iny = y(i) - y(i-1);
-                outx = x(i+1) - x(i); outy = y(i+1) - y(i);
+                inx = px[i] - px[i-1]; iny = py[i] - py[i-1];
+                outx = px[i+1] - px[i]; outy = py[i+1] - py[i];
             }
             float lin = (float)Math.hypot(inx, iny), lout = (float)Math.hypot(outx, outy);
             if (lin < 1e-4f) { inx = outx; iny = outy; lin = lout; }
             if (lout < 1e-4f) { outx = inx; outy = iny; lout = lin; }
             if (lin < 1e-4f) {
-                lx[i] = rx[i] = x(i); ly[i] = ry[i] = y(i);
+                lx[i] = rx[i] = px[i]; ly[i] = ry[i] = py[i];
                 continue;
             }
             float n0x = -iny / lin, n0y = inx / lin;
@@ -246,16 +301,15 @@ final class InkStroke {
             float ml = (float)Math.hypot(mx, my);
             if (ml < 1e-3f) { mx = n1x; my = n1y; } else { mx /= ml; my /= ml; }
             float dot = mx * n1x + my * n1y;
-            boolean brush = "brush".equals(tool);
             // A loaded brush should not grow a spike where the hand turns; the pen keeps a
             // sharper miter because that is what gives it its crisp corner.
             float miter = Math.min(brush ? 1.25f : 2.4f, 1f / Math.max(.42f, Math.abs(dot)));
             float cos = clamp(n0x * n1x + n0y * n1y, -1f, 1f);
             float turn = (float)Math.acos(cos);
             float damp = 1f - (brush ? .26f : .40f) * (turn / (float)Math.PI);
-            float r = radius(i) * damp;
-            lx[i] = x(i) + mx * r * miter; ly[i] = y(i) + my * r * miter;
-            rx[i] = x(i) - mx * r * miter; ry[i] = y(i) - my * r * miter;
+            float r = pr[i] * damp;
+            lx[i] = px[i] + mx * r * miter; ly[i] = py[i] + my * r * miter;
+            rx[i] = px[i] - mx * r * miter; ry[i] = py[i] - my * r * miter;
         }
         // One continuous contour: the two long sides and a semicircular cap at each end. The
         // caps are part of the contour, not separate circles, so the overlap never punches a
@@ -263,9 +317,9 @@ final class InkStroke {
         path.setFillType(Path.FillType.WINDING);
         path.moveTo(lx[0], ly[0]);
         for (int i = 1; i < n; i++) path.lineTo(lx[i], ly[i]);
-        capArc(x(n-1), y(n-1), lx[n-1], ly[n-1]);
+        capArc(px[n-1], py[n-1], lx[n-1], ly[n-1]);
         for (int i = n - 2; i >= 0; i--) path.lineTo(rx[i], ry[i]);
-        capArc(x(0), y(0), rx[0], ry[0]);
+        capArc(px[0], py[0], rx[0], ry[0]);
         path.close();
     }
 

@@ -2,7 +2,7 @@
 
 ## 1. 安装
 
-从 Releases 下载 `PaperHarbor-1.1.1.apk`，点开安装。这是正式构建（`debuggable=false`），
+从 Releases 下载 `PaperHarbor-1.1.2.apk`，点开安装。这是正式构建（`debuggable=false`），
 包名 `io.github.kkkzheli.paperharbor`，需要 Android 8.0（API 26）及以上。
 
 系统可能提示「未知来源应用」，那是侧载的正常提示；纸港不申请网络权限，也没有后台服务。

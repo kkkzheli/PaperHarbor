@@ -19,9 +19,10 @@ licensed by, or derived from Goodnotes; no code, artwork or subscription from th
   when the notebook is created or later from the long-press sheet, with a live preview.
 - **Paper** — five patterns (ruled, grid, dot, blank, Cornell) and six paper tints, chosen per
   notebook and changed per page from *More → Page style*.
-- **Pens** — a hard pen with pressure taper, a soft brush whose width follows speed, pressure and
-  curvature with a smooth body even at the widest setting, and a translucent highlighter whose
-  opacity is adjustable from its own chooser.
+- **Pens** — a hard pen with pressure taper, and a soft brush whose width follows real drawing
+  speed (measured from event timing, so it reacts to your hand rather than the sample rate) and
+  pressure, with a long smooth entry and exit. Curves are refined so a thick stroke stays a
+  curve; a translucent highlighter has its own opacity control.
 - **Eraser** — remove whole strokes, or erase only the area you sweep across; area erasing cuts
   shapes and thick strokes cleanly, with rounded ends instead of nibbled edges.
 - **Shapes and the magic pen** — line, arrow, rectangle, circle, ellipse, triangle, diamond,
@@ -85,7 +86,7 @@ modified either: annotation happens on top, and the export creates a new file.
 
 ## Install
 
-Download `PaperHarbor-1.1.1.apk` from the releases page and sideload it. It is a release build
+Download `PaperHarbor-1.1.2.apk` from the releases page and sideload it. It is a release build
 (`debuggable=false`) signed with a locally generated key; the package is
 `io.github.kkkzheli.paperharbor` and Android 8.0 (API 26) or newer is required.
 
@@ -110,7 +111,7 @@ python -I .\tools\verify-apk.py .\app\build\outputs\apk\release\app-release.apk 
 signature and prints the SHA-256. Instrumentation tests run on a dedicated device or emulator with
 `connectedDebugAndroidTest`; `tools/offline-smoke.py` drives the real UI in airplane mode and
 `tools/layout-check.py` checks portrait, landscape and 360 dp. Acceptance notes for this build are
-in [docs/verification-1.1.1.md](docs/verification-1.1.1.md).
+in [docs/verification-1.1.2.md](docs/verification-1.1.1.md).
 
 ## Licence and attribution
 

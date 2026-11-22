@@ -708,7 +708,7 @@ public final class InkView extends View {
                 ? new InkStroke("shape", shapeKind, argb, width)
                 : new InkStroke(magic ? "pen" : active, argb, width);
             if ("marker".equals(draft.tool)) draft.markerAlpha(markerAlpha);
-            draft.sample(endX,endY,press(stylus,e.getPressure(i)));
+            draft.sample(endX,endY,press(stylus,e.getPressure(i)), e.getEventTime());
         } else if ("erase".equals(active)) {
             mode = areaErase ? AREA : ERASE;
             eraseRadius=Math.max(width*.5f,8*dp/scale);
@@ -745,10 +745,11 @@ public final class InkView extends View {
 
     private void samples(MotionEvent e, int i) {
         for (int k=0; k<e.getHistorySize(); k++)
-            sample(e.getHistoricalX(i,k),e.getHistoricalY(i,k),e.getHistoricalPressure(i,k));
-        sample(e.getX(i),e.getY(i),e.getPressure(i));
+            sample(e.getHistoricalX(i,k),e.getHistoricalY(i,k),e.getHistoricalPressure(i,k),
+                e.getHistoricalEventTime(k));
+        sample(e.getX(i),e.getY(i),e.getPressure(i), e.getEventTime());
     }
-    private void sample(float sx, float sy, float rawPressure) {
+    private void sample(float sx, float sy, float rawPressure, long time) {
         if (!Float.isFinite(sx) || !Float.isFinite(sy)) return;
         if (mode==PAN) {
             cameraX=startCamX-(sx-startSx)/scale;
@@ -758,7 +759,7 @@ public final class InkView extends View {
         float x=pageX(sx), y=pageY(sy);
         float cx=(groupVisual.left+groupVisual.right)*.5f, cy=(groupVisual.top+groupVisual.bottom)*.5f;
         switch (mode) {
-            case DRAW: draft.sample(x,y,press(stylus,rawPressure)); break;
+            case DRAW: draft.sample(x,y,press(stylus,rawPressure),time); break;
             case ERASE: erase(endX,endY,x,y); break;
             case AREA: eraseArea(endX,endY,x,y); break;
             case LASSO:
