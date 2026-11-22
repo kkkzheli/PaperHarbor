@@ -35,7 +35,8 @@ import java.util.concurrent.Executors;
 
 /** Hosts the shelf, editor and settings, and owns file-picker intents. Everything stays local. */
 public final class MainActivity extends Activity {
-  private static final int RQ_PDF = 21, RQ_IMAGE = 22, RQ_RESTORE = 23, RQ_EXPORT = 24, RQ_BACKUP = 25, RQ_PAGE = 26;
+  private static final int RQ_PDF = 21, RQ_IMAGE = 22, RQ_RESTORE = 23, RQ_EXPORT = 24, RQ_BACKUP = 25,
+      RQ_PAGE = 26, RQ_PLACE_IMAGE = 27, RQ_DOCX_EXPORT = 28, RQ_DOCX_IMPORT = 29;
   private static final ExecutorService disk = Executors.newSingleThreadExecutor(r -> {
     Thread t = new Thread(r, "activity-disk");
     t.setDaemon(true);
@@ -60,7 +61,8 @@ public final class MainActivity extends Activity {
   @Override public void onCreate(Bundle state) {
     super.onCreate(state);
     prefs = new Prefs(this);
-    Ui.install(this, prefs.theme());
+    Str.install(prefs.lang());
+    Ui.install(this, prefs.theme(), prefs.accent());
     Ui.applySystemBars(this);
     getWindow().setBackgroundDrawable(new ColorDrawable(Ui.BG));
     getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
@@ -179,6 +181,7 @@ public final class MainActivity extends Activity {
     @Override public void restoreBackup() { pickFile(RQ_RESTORE, "*/*"); }
     @Override public void exportPdf(String id) { loadThenExport(id, false); }
     @Override public void backup(String id) { loadThenExport(id, true); }
+    @Override public void importDocx() { pickFile(RQ_DOCX_IMPORT, "*/*"); }
     @Override public void settings() { showSettings(); }
   }
 
@@ -204,6 +207,8 @@ public final class MainActivity extends Activity {
       startExport(id, snapshot, false, true, page);
     }
     @Override public void backup(String id, JSONObject snapshot) { startExport(id, snapshot, true, false, 0); }
+    @Override public void exportDocx(String id, JSONObject snapshot) { startDocxExport(id, snapshot); }
+    @Override public void pickImage() { pickFile(RQ_PLACE_IMAGE, "image/*"); }
   }
 
   // ---- files --------------------------------------------------------------------------------
@@ -256,6 +261,23 @@ public final class MainActivity extends Activity {
     }
   }
 
+  /** Writes the notebook to a Word document chosen by the user. */
+  private void startDocxExport(String id, JSONObject doc) {
+    try {
+      exportId = id;
+      exportDoc = doc;
+      exportTitle = doc.optString("title", Str.of("笔记"));
+      Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+      intent.addCategory(Intent.CATEGORY_OPENABLE);
+      intent.putExtra(Intent.EXTRA_LOCAL_ONLY, true);
+      intent.setType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+      intent.putExtra(Intent.EXTRA_TITLE, safeName(exportTitle) + ".docx");
+      startActivityForResult(intent, RQ_DOCX_EXPORT);
+    } catch (ActivityNotFoundException e) {
+      showError("没有可用的文件选择器", e);
+    }
+  }
+
   private void pickFile(int request, String mime) {
     try {
       Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -270,6 +292,8 @@ public final class MainActivity extends Activity {
 
   private static String safeName(String title) {
     String cleaned = title.replaceAll("[\\p{Cntrl}\\\\/:*?\"<>|]", "_").trim();
+    // A note imported from "report.docx" keeps that name; drop one known suffix first.
+    cleaned = cleaned.replaceFirst("(?i)\\.(phnote|pdf|docx|doc|png|jpe?g)$", "");
     if (cleaned.isEmpty()) cleaned = Str.of("笔记");
     return cleaned.length() > 80 ? cleaned.substring(0, 80) : cleaned;
   }
@@ -287,6 +311,57 @@ public final class MainActivity extends Activity {
     super.onActivityResult(request, result, data);
     if (result != RESULT_OK || data == null || data.getData() == null) return;
     final Uri uri = data.getData();
+    if (request == RQ_DOCX_IMPORT) {
+      showLoading("正在导入 Word 文档…");
+      final String title = displayName(uri, "Word 文档");
+      disk.execute(() -> {
+        try {
+          final String id;
+          try (InputStream in = getContentResolver().openInputStream(uri)) {
+            if (in == null) throw new IOException("无法读取文件");
+            id = store.createFromDoc(DocxImport.read(in, title));
+          }
+          runOnUiThread(() -> {
+            hideLoading();
+            open(id, 0);
+          });
+        } catch (final Exception e) {
+          runOnUiThread(() -> {
+            hideLoading();
+            showError("导入失败", e);
+          });
+        }
+      });
+      return;
+    }
+    if (request == RQ_DOCX_EXPORT) {
+      final String id = exportId;
+      final JSONObject doc = exportDoc;
+      showLoading("正在写入 Word 文档…");
+      disk.execute(() -> {
+        try {
+          if (id == null || doc == null) throw new IOException("没有可导出的笔记");
+          try (OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {
+            if (out == null) throw new IOException("无法写入目标文件");
+            DocxExport.write(store, id, doc, out);
+          }
+          runOnUiThread(() -> {
+            hideLoading();
+            toast("已导出 Word 文档");
+          });
+        } catch (final Exception e) {
+          runOnUiThread(() -> {
+            hideLoading();
+            showError("导出失败", e);
+          });
+        }
+      });
+      return;
+    }
+    if (request == RQ_PLACE_IMAGE) {
+      if (editor != null) editor.insertImage(uri);
+      return;
+    }
     if (request == RQ_PDF || request == RQ_IMAGE || request == RQ_RESTORE) {
       showLoading(request == RQ_RESTORE ? "正在恢复备份…" : request == RQ_IMAGE ? "正在导入图片…" : "正在导入 PDF…");
       disk.execute(() -> {
@@ -352,7 +427,7 @@ public final class MainActivity extends Activity {
     try {
       Canvas canvas = new Canvas(image);
       canvas.scale(2f, 2f);
-      InkView.drawPage(canvas, page, background);
+      InkView.drawPage(canvas, page, background, store, id);
       if (!image.compress(Bitmap.CompressFormat.PNG, 100, out)) throw new IOException("无法编码 PNG");
     } finally {
       image.recycle();

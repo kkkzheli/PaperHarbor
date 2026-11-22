@@ -180,7 +180,7 @@ public final class StudyAudio {
         int n = items.length(); index = Math.max(0, Math.min(index, n - 1));
         boolean card = folder == null;
         if (!card && recorder != null) {
-            saText("正在录音：" + recordName, 20);
+            saText(Str.recordingLive(recordName), 20);
             saText("最长 10 分钟。关闭窗口或离开页面时会结束并保存有效录音。", 15);
             saButton(body, "结束并保存", () -> saFinishRecording(true));
             saButton(body, "放弃这段录音", () -> saFinishRecording(false)); return;
@@ -199,7 +199,7 @@ public final class StudyAudio {
             String rating = item.optString("rating", "new");
             String rated = "again".equals(rating) ? "没记住" : "hard".equals(rating) ? "不熟悉"
                     : "good".equals(rating) ? "已掌握" : "未评价";
-            saText("上次自评：" + rated + "　复习 " + item.optInt("reviews") + " 次", 14);
+            saText(Str.of("上次自评：") + Str.of(rated) + "  ·  " + Str.reviewLine(item.optInt("reviews")), 14);
             saText(back ? "背面 · 答案" : "正面 · 问题", 16);
             saText(item.optString(back ? "back" : "front", ""), 21);
             saButton(body, back ? "看问题" : "翻看答案", () -> { back = !back; saRender(); });
@@ -212,7 +212,7 @@ public final class StudyAudio {
         } else {
             saText(item.optString("name", "未命名录音"), 20);
             long seconds = Math.max(0, item.optLong("durationMs") / 1000);
-            saText(String.format(Locale.ROOT, "时长 %d:%02d", seconds / 60, seconds % 60), 16);
+            saText(Str.duration((int)(seconds / 60), (int)(seconds % 60)), 16);
             saButton(body, player == null ? "播放" : "停止播放", () -> {
                 if (player == null) saPlay(item); else { saStopPlayback(); saRender(); }
             });
@@ -289,7 +289,7 @@ public final class StudyAudio {
         saChild(new AlertDialog.Builder(a).setTitle(Str.of("新录音")).setView(box).setNegativeButton(Str.of("取消"), null)
                 .setPositiveButton(Str.of("开始录制"), (v, w) -> {
                     String name = title.getText().toString().trim();
-                    saRecord(name.isEmpty() ? "录音 " + (saItems().length() + 1) : name);
+                    saRecord(name.isEmpty() ? Str.recordingName(String.valueOf(saItems().length() + 1)) : name);
                 }).create());
     }
 

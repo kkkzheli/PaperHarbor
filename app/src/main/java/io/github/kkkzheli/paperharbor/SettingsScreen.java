@@ -1,6 +1,6 @@
 /*
  * PaperHarbor — an offline notebook for Android.
- * Copyright (c) kkkzheli. Original implementation, not affiliated with Goodnotes.
+ * Copyright (c) kkkzheli. Original implementation.
  */
 package io.github.kkkzheli.paperharbor;
 
@@ -19,18 +19,16 @@ import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
-
 import java.io.File;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Local settings: appearance, writing behaviour, default paper, storage and attribution. */
+/** Local settings: appearance, language, writing, new-note defaults, storage and attribution. */
 final class SettingsScreen extends android.widget.FrameLayout {
   static final String AUTHOR_URL = "https://github.com/kkkzheli";
   static final String REPO_URL = "https://github.com/kkkzheli/PaperHarbor";
+  static final String RELEASES_URL = "https://github.com/kkkzheli/PaperHarbor/releases";
 
   interface Host {
     void back();
@@ -47,7 +45,7 @@ final class SettingsScreen extends android.widget.FrameLayout {
     return t;
   });
   private TextView usage;
-  private LinearLayout themeRow;
+  private LinearLayout themeRow, languageRow, accentRow;
 
   SettingsScreen(Activity activity, Prefs prefs, Store store, Host host) {
     super(activity);
@@ -92,6 +90,7 @@ final class SettingsScreen extends android.widget.FrameLayout {
     content.setPadding(Ui.dp(a, 16), Ui.dp(a, 4), Ui.dp(a, 16), Ui.dp(a, 40));
     scroll.addView(content, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+    // ---- appearance ----
     content.addView(Ui.sectionLabel(a, "外观"));
     themeRow = Ui.row(a);
     String[] themeNames = {"浅色", "深色", "跟随系统"};
@@ -118,6 +117,56 @@ final class SettingsScreen extends android.widget.FrameLayout {
     content.addView(themeRow);
     syncThemeTiles(themeModes);
 
+    LinearLayout accentBox = Ui.column(a);
+    accentBox.setBackground(Ui.round(a, Ui.SURFACE, 18));
+    accentBox.setPadding(Ui.dp(a, 14), Ui.dp(a, 12), Ui.dp(a, 14), Ui.dp(a, 14));
+    LinearLayout.LayoutParams ablp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    ablp.topMargin = Ui.dp(a, 10);
+    content.addView(accentBox, ablp);
+    accentBox.addView(Ui.text(a, "强调色", 14.5f, Ui.INK));
+    accentRow = Ui.row(a);
+    accentRow.setPadding(0, Ui.dp(a, 10), 0, 0);
+    accentBox.addView(accentRow);
+    for (int i = 0; i < Ui.ACCENTS.length; i++) {
+      final int index = i;
+      Ui.ColorChip chip = new Ui.ColorChip(a);
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Ui.dp(a, 34), Ui.dp(a, 34));
+      if (i > 0) lp.leftMargin = Ui.dp(a, 10);
+      chip.setLayoutParams(lp);
+      chip.setColor(Ui.ACCENTS[i][Ui.dark ? 2 : 0]);
+      chip.setSelectedChip(i == prefs.accent());
+      chip.setContentDescription(Str.of("强调色"));
+      chip.setOnClickListener(v -> {
+        if (prefs.accent() == index) return;
+        prefs.setAccent(index);
+        host.restart();
+      });
+      accentRow.addView(chip);
+    }
+
+    // ---- language ----
+    content.addView(Ui.sectionLabel(a, "语言"));
+    languageRow = Ui.row(a);
+    final int[] langs = {0, 1, 2};
+    String[] langNames = {"跟随系统", "简体中文", "English"};
+    for (int i = 0; i < 3; i++) {
+      LinearLayout tile = Ui.choiceTile(a, null, langNames[i], null);
+      tile.setPadding(Ui.dp(a, 10), Ui.dp(a, 20), Ui.dp(a, 10), Ui.dp(a, 20));
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+      if (i > 0) lp.leftMargin = Ui.dp(a, 8);
+      tile.setLayoutParams(lp);
+      final int value = langs[i];
+      tile.setOnClickListener(v -> {
+        if (prefs.lang() == value) return;
+        prefs.setLang(value);
+        host.restart();
+      });
+      languageRow.addView(tile);
+    }
+    content.addView(languageRow);
+    syncLanguageTiles(langs);
+
+    // ---- writing ----
     content.addView(Ui.sectionLabel(a, "书写"));
     LinearLayout writing = Ui.column(a);
     writing.setBackground(Ui.round(a, Ui.SURFACE, 18));
@@ -126,69 +175,126 @@ final class SettingsScreen extends android.widget.FrameLayout {
     writing.addView(Ui.switchRow(a, R.drawable.ic_pen, "只用手写笔绘制",
         "手指只用来平移缩放，避免手掌误触", prefs.stylusOnly(),
         checked -> prefs.setStylusOnly(checked)));
-
-    LinearLayout pressureBox = Ui.column(a);
-    pressureBox.setPadding(Ui.dp(a, 14), Ui.dp(a, 8), Ui.dp(a, 14), Ui.dp(a, 10));
-    LinearLayout pressureHead = Ui.row(a);
-    pressureHead.addView(Ui.text(a, "压感灵敏度", 14.5f, Ui.INK));
-    LinearLayout.LayoutParams phlp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-    TextView pressureValue = Ui.text(a, "", 12, Ui.MUTED);
-    pressureValue.setGravity(Gravity.END);
-    pressureHead.addView(pressureValue, phlp);
-    pressureBox.addView(pressureHead);
-    SeekBar pressureBar = new SeekBar(a);
-    pressureBar.setMax(100);
-    pressureBar.setProgressDrawable(Ui.sliderTrack(a, Ui.LINE, Ui.INK));
-    pressureBar.setSplitTrack(false);
-    pressureBar.setThumbTintList(android.content.res.ColorStateList.valueOf(Ui.ACCENT));
-    pressureBar.setProgress(Math.round((prefs.pressure() - .5f) / 1f * 100));
-    pressureValue.setText(Str.of(pressureLabel(prefs.pressure())));
-    pressureBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-      @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
-        float value = .5f + progress / 100f;
-        pressureValue.setText(Str.of(pressureLabel(value)));
-        if (fromUser) prefs.setPressure(Math.round(value * 20) / 20f);
-      }
-      @Override public void onStartTrackingTouch(SeekBar bar) { }
-      @Override public void onStopTrackingTouch(SeekBar bar) { }
-    });
-    LinearLayout.LayoutParams pblp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-    pblp.topMargin = Ui.dp(a, 4);
-    pressureBox.addView(pressureBar, pblp);
-    writing.addView(pressureBox);
+    writing.addView(sliderRow("压感灵敏度", .5f, 1.5f, prefs.pressure(),
+        value -> Str.of(pressureLabel(value)), prefs::setPressure));
+    writing.addView(sliderRow("荧光笔不透明度", .15f, 1f, prefs.markerAlpha(),
+        value -> Math.round(value * 100) + "%", prefs::setMarkerAlpha));
     writing.addView(Ui.switchRow(a, R.drawable.ic_eraser, "橡皮默认范围擦除",
         "开启后只擦掉笔迹上碰到的一段", prefs.eraseMode() == 1,
         checked -> prefs.setEraseMode(checked ? 1 : 0)));
 
-    content.addView(Ui.sectionLabel(a, "新笔记的纸张"));
+    // ---- new note defaults ----
+    content.addView(Ui.sectionLabel(a, "新笔记的样式"));
     LinearLayout papers = Ui.row(a);
-    String[] paperKeys = {"ruled", "grid", "plain"};
-    String[] paperNames = {"横线", "方格", "空白"};
-    LibraryScreen.TemplatePreview[] previews = new LibraryScreen.TemplatePreview[3];
-    for (int i = 0; i < 3; i++) {
+    String[] paperKeys = InkPaper.PATTERNS;
+    final LibraryScreen.TemplatePreview[] previews = new LibraryScreen.TemplatePreview[paperKeys.length];
+    for (int i = 0; i < paperKeys.length; i++) {
       final String key = paperKeys[i];
       LinearLayout cell = Ui.column(a);
       cell.setGravity(Gravity.CENTER);
       LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-      if (i > 0) clp.leftMargin = Ui.dp(a, 8);
+      if (i > 0) clp.leftMargin = Ui.dp(a, 6);
       cell.setLayoutParams(clp);
       LibraryScreen.TemplatePreview preview = new LibraryScreen.TemplatePreview(a, key);
-      preview.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(a, 92)));
+      preview.setTint(prefs.paperTint());
+      preview.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(a, 84)));
       preview.setOnClickListener(v -> {
         prefs.setPaper(key);
-        for (int j = 0; j < 3; j++) previews[j].setChosen(paperKeys[j].equals(key));
+        for (int j = 0; j < previews.length; j++) previews[j].setChosen(paperKeys[j].equals(key));
       });
       preview.setChosen(key.equals(prefs.paper()));
       previews[i] = preview;
       cell.addView(preview);
-      TextView name = Ui.text(a, paperNames[i], 11.5f, Ui.MUTED);
+      TextView name = Ui.text(a, InkPaper.PATTERN_NAMES[i], 10.5f, Ui.MUTED);
       name.setGravity(Gravity.CENTER);
-      name.setPadding(0, Ui.dp(a, 6), 0, 0);
+      name.setPadding(0, Ui.dp(a, 5), 0, 0);
       cell.addView(name);
       papers.addView(cell);
     }
     content.addView(papers);
 
+    LinearLayout tintRow = Ui.row(a);
+    tintRow.setGravity(Gravity.CENTER);
+    tintRow.setPadding(0, Ui.dp(a, 12), 0, 0);
+    content.addView(tintRow);
+    for (int i = 0; i < InkPaper.TINTS.length; i++) {
+      final int value = InkPaper.TINTS[i];
+      Ui.ColorChip chip = new Ui.ColorChip(a);
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Ui.dp(a, 36), Ui.dp(a, 36));
+      if (i > 0) lp.leftMargin = Ui.dp(a, 10);
+      chip.setLayoutParams(lp);
+      chip.setColor(value);
+      chip.setSelectedChip(value == prefs.paperTint());
+      chip.setContentDescription(Str.of("纸张颜色"));
+      chip.setOnClickListener(v -> {
+        prefs.setPaperTint(value);
+        for (int j = 0; j < tintRow.getChildCount(); j++)
+          ((Ui.ColorChip) tintRow.getChildAt(j)).setSelectedChip(tintRow.getChildAt(j) == chip);
+        for (LibraryScreen.TemplatePreview preview : previews) preview.setTint(value);
+      });
+      tintRow.addView(chip);
+    }
+
+    LinearLayout coverBox = Ui.column(a);
+    coverBox.setBackground(Ui.round(a, Ui.SURFACE, 18));
+    coverBox.setPadding(Ui.dp(a, 14), Ui.dp(a, 12), Ui.dp(a, 14), Ui.dp(a, 14));
+    LinearLayout.LayoutParams cblp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    cblp.topMargin = Ui.dp(a, 12);
+    content.addView(coverBox, cblp);
+    coverBox.addView(Ui.text(a, "默认封面", 14.5f, Ui.INK));
+    LinearLayout coverStyles = Ui.row(a);
+    LinearLayout.LayoutParams cslp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    cslp.topMargin = Ui.dp(a, 10);
+    coverBox.addView(coverStyles, cslp);
+    final CoverArt[] samples = new CoverArt[CoverArt.STYLES.length];
+    final LinearLayout[] styleTiles = new LinearLayout[CoverArt.STYLES.length];
+    for (int i = 0; i < CoverArt.STYLES.length; i++) {
+      final String key = CoverArt.STYLES[i];
+      LinearLayout cell = Ui.column(a);
+      cell.setGravity(Gravity.CENTER);
+      CoverArt sample = new CoverArt(a);
+      sample.setCover(key, prefs.coverColor());
+      sample.setTitle(Str.of("纸港"));
+      sample.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(a, 62)));
+      cell.addView(sample);
+      LinearLayout tile = Ui.choiceTile(a, cell, CoverArt.STYLE_NAMES[i], null);
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+      if (i > 0) lp.leftMargin = Ui.dp(a, 6);
+      tile.setLayoutParams(lp);
+      final int index = i;
+      tile.setOnClickListener(v -> {
+        prefs.setCoverStyle(key);
+        for (int j = 0; j < styleTiles.length; j++) Ui.setChosen(styleTiles[j], j == index);
+      });
+      samples[i] = sample;
+      styleTiles[i] = tile;
+      coverStyles.addView(tile);
+    }
+    for (int i = 0; i < styleTiles.length; i++)
+      Ui.setChosen(styleTiles[i], CoverArt.STYLES[i].equals(prefs.coverStyle()));
+    LinearLayout coverColors = Ui.row(a);
+    coverColors.setGravity(Gravity.CENTER);
+    coverColors.setPadding(0, Ui.dp(a, 12), 0, 0);
+    coverBox.addView(coverColors);
+    for (int i = 0; i < CoverArt.PALETTE.length; i++) {
+      final int value = CoverArt.PALETTE[i];
+      Ui.ColorChip chip = new Ui.ColorChip(a);
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Ui.dp(a, 30), Ui.dp(a, 30));
+      if (i > 0) lp.leftMargin = Ui.dp(a, 8);
+      chip.setLayoutParams(lp);
+      chip.setColor(value);
+      chip.setSelectedChip(value == prefs.coverColor());
+      chip.setContentDescription(Str.of("封面颜色"));
+      chip.setOnClickListener(v -> {
+        prefs.setCoverColor(value);
+        for (int j = 0; j < coverColors.getChildCount(); j++)
+          ((Ui.ColorChip) coverColors.getChildAt(j)).setSelectedChip(coverColors.getChildAt(j) == chip);
+        for (int j = 0; j < samples.length; j++) samples[j].setCover(CoverArt.STYLES[j], value);
+      });
+      coverColors.addView(chip);
+    }
+
+    // ---- data ----
     content.addView(Ui.sectionLabel(a, "数据"));
     LinearLayout data = Ui.column(a);
     usage = Ui.text(a, "正在统计本机用量…", 12.5f, Ui.MUTED);
@@ -202,16 +308,22 @@ final class SettingsScreen extends android.widget.FrameLayout {
       prefs.clearRecents();
       toast("已清空最近颜色");
     }));
+    data.addView(Ui.iconRow(a, R.drawable.ic_image, "清空缩略图缓存", false, () -> {
+      Thumbnails.clear();
+      PageImage.clear();
+      toast("缓存已清空");
+    }));
     content.addView(data);
 
+    // ---- about ----
     content.addView(Ui.sectionLabel(a, "关于"));
     LinearLayout about = Ui.column(a);
     about.setBackground(Ui.round(a, Ui.SURFACE, 18));
     about.setPadding(Ui.dp(a, 4), Ui.dp(a, 4), Ui.dp(a, 4), Ui.dp(a, 4));
     about.addView(aboutHeader());
     TextView intro = Ui.text(a,
-        "纸港由 kkkzheli 独立设计与实现：不登录、不联网、不上传，笔迹、文字、闪卡和录音"
-            + "只保存在这台设备上。它与 Goodnotes 无从属或授权关系。", 12.5f, Ui.MUTED);
+        "纸港由 kkkzheli 独立设计与实现：不登录、不联网、不上传，笔迹、文字、闪卡和录音只保存在这台设备上。",
+        12.5f, Ui.MUTED);
     intro.setPadding(Ui.dp(a, 16), 0, Ui.dp(a, 16), Ui.dp(a, 14));
     intro.setLineSpacing(Ui.dp(a, 3), 1f);
     about.addView(intro);
@@ -219,12 +331,13 @@ final class SettingsScreen extends android.widget.FrameLayout {
         () -> open(AUTHOR_URL)));
     about.addView(Ui.iconRow(a, R.drawable.ic_link, "项目主页 · GitHub", false,
         () -> open(REPO_URL)));
+    about.addView(Ui.iconRow(a, R.drawable.ic_export, "版本发布 · GitHub", false,
+        () -> open(RELEASES_URL)));
     about.addView(Ui.iconRow(a, R.drawable.ic_info, "离线与隐私", false, this::showPrivacySheet));
     about.addView(Ui.iconRow(a, R.drawable.ic_notebook, "第三方许可", false, this::showLicenseSheet));
     content.addView(about);
 
-    TextView footer = Ui.text(a, "纸港 1.0 · 由 kkkzheli 设计与实现 · 与 Goodnotes 无从属关系",
-        10.5f, Ui.MUTED);
+    TextView footer = Ui.text(a, Str.of("纸港") + " v" + versionName() + " · kkkzheli", 10.5f, Ui.MUTED);
     footer.setGravity(Gravity.CENTER);
     footer.setPadding(0, Ui.dp(a, 22), 0, 0);
     content.addView(footer);
@@ -236,6 +349,51 @@ final class SettingsScreen extends android.widget.FrameLayout {
     for (int i = 0; i < themeRow.getChildCount() && i < modes.length; i++) {
       Ui.setChosen(themeRow.getChildAt(i), modes[i] == current);
     }
+  }
+
+  private void syncLanguageTiles(int[] values) {
+    if (languageRow == null) return;
+    int current = prefs.lang();
+    for (int i = 0; i < languageRow.getChildCount() && i < values.length; i++) {
+      Ui.setChosen(languageRow.getChildAt(i), values[i] == current);
+    }
+  }
+
+  /**
+   * A title, its current value and a slider on one card row. The label is rebuilt on every change,
+   * so a formatter can show a percentage or a named step.
+   */
+  private LinearLayout sliderRow(String title, float min, float max, float value,
+                                 java.util.function.Function<Float, String> label,
+                                 java.util.function.Consumer<Float> onChange) {
+    LinearLayout box = Ui.column(a);
+    box.setPadding(Ui.dp(a, 14), Ui.dp(a, 8), Ui.dp(a, 14), Ui.dp(a, 10));
+    LinearLayout head = Ui.row(a);
+    head.addView(Ui.text(a, title, 14.5f, Ui.INK));
+    LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+    TextView valueView = Ui.text(a, label.apply(value), 12, Ui.MUTED);
+    valueView.setGravity(Gravity.END);
+    head.addView(valueView, hlp);
+    box.addView(head);
+    SeekBar bar = new SeekBar(a);
+    bar.setMax(1000);
+    bar.setProgressDrawable(Ui.sliderTrack(a, Ui.LINE, Ui.INK));
+    bar.setSplitTrack(false);
+    bar.setThumbTintList(android.content.res.ColorStateList.valueOf(Ui.ACCENT));
+    bar.setProgress(Math.round((value - min) / (max - min) * 1000));
+    LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    blp.topMargin = Ui.dp(a, 2);
+    box.addView(bar, blp);
+    bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+      @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+        float current = min + (max - min) * progress / 1000f;
+        valueView.setText(label.apply(current));
+        if (fromUser) onChange.accept(current);
+      }
+      @Override public void onStartTrackingTouch(SeekBar seekBar) { }
+      @Override public void onStopTrackingTouch(SeekBar seekBar) { }
+    });
+    return box;
   }
 
   private static String pressureLabel(float value) {
@@ -257,7 +415,7 @@ final class SettingsScreen extends android.widget.FrameLayout {
     lp.leftMargin = Ui.dp(a, 12);
     labels.setLayoutParams(lp);
     labels.addView(Ui.serifTitle(a, "纸港 · PaperHarbor", 18, Ui.INK));
-    labels.addView(Ui.text(a, Str.version(versionName()), 11.5f, Ui.MUTED));
+    labels.addView(Ui.text(a, "v" + versionName() + " · kkkzheli", 11.5f, Ui.MUTED));
     box.addView(labels);
     return box;
   }
@@ -266,7 +424,7 @@ final class SettingsScreen extends android.widget.FrameLayout {
     try {
       return a.getPackageManager().getPackageInfo(a.getPackageName(), 0).versionName;
     } catch (PackageManager.NameNotFoundException e) {
-      return "1.0";
+      return "1.1.0";
     }
   }
 
@@ -313,7 +471,7 @@ final class SettingsScreen extends android.widget.FrameLayout {
   }
 
   private void toast(String message) {
-    android.widget.Toast.makeText(a, message, android.widget.Toast.LENGTH_SHORT).show();
+    android.widget.Toast.makeText(a, Str.of(message), android.widget.Toast.LENGTH_SHORT).show();
   }
 
   private void showPrivacySheet() {
@@ -356,8 +514,7 @@ final class SettingsScreen extends android.widget.FrameLayout {
         Str.of("文字识别使用 Tesseract4Android（Apache License 2.0）与其语言数据 chi_sim、eng。")
             + Str.of("语言数据随安装包提供，识别完全在本机完成。")
             + Str.of("完整声明见应用资源 assets/ocr/NOTICE.txt 与仓库 licenses/ 目录。\n\n")
-            + Str.of("界面图标与图形均为本项目原创的矢量资源。")
-            + Str.of("本项目与 Goodnotes 无从属或授权关系，包含的任何名称仅用于说明兼容范围。"),
+            + Str.of("界面图标与图形均为本项目原创的矢量资源。"),
         13, Ui.MUTED);
     text.setLineSpacing(Ui.dp(a, 3), 1f);
     content.addView(text);

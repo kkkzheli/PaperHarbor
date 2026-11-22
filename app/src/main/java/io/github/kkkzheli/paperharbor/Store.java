@@ -2,6 +2,7 @@ package io.github.kkkzheli.paperharbor;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.pdf.PdfDocument;
@@ -67,17 +68,39 @@ public final class Store {
     }
 
     public static JSONObject page(int w, int h, String paper, int pdfIndex) throws JSONException {
+        return page(w, h, paper, pdfIndex, Ui.PAPER);
+    }
+
+    public static JSONObject page(int w, int h, String paper, int pdfIndex, int tint) throws JSONException {
         StoreJson.checkPage(w, h, paper, pdfIndex);
         return new JSONObject().put("w",w).put("h",h).put("paper",paper).put("pdf",pdfIndex)
-                .put("ink",new JSONArray()).put("text","").put("bookmark",false);
+                .put("tint",tint).put("ink",new JSONArray()).put("texts",new JSONArray())
+                .put("images",new JSONArray()).put("text","").put("bookmark",false);
     }
 
     private static JSONObject notebook(String title, JSONArray pages) throws JSONException {
         return new JSONObject().put("title", title).put("pages", pages).put("cards", new JSONArray()).put("audio", new JSONArray());
     }
 
+    private static JSONObject notebook(String title, JSONArray pages, String coverStyle, int coverColor)
+            throws JSONException {
+        JSONObject doc = notebook(title, pages);
+        return doc.put("cover", new JSONObject().put("style", coverStyle).put("color", coverColor));
+    }
+
     public String create(String title, String paper) throws Exception {
-        JSONObject doc = notebook(title, new JSONArray().put(page(612,792,paper,-1)));
+        return create(title, paper, Ui.PAPER, "spine", Ui.coverColor(title));
+    }
+
+    /** Publishes a document assembled by an importer, after the same schema check as any save. */
+    public String createFromDoc(JSONObject doc) throws Exception {
+        StoreJson.validate(doc);
+        try (Stage s = new Stage()) { writeNote(s.dir, doc); return s.publish(); }
+    }
+
+    public String create(String title, String paper, int tint, String coverStyle, int coverColor) throws Exception {
+        JSONObject doc = notebook(title, new JSONArray().put(page(612,792,paper,-1,tint)),
+            coverStyle, coverColor);
         StoreJson.validate(doc);
         try (Stage s = new Stage()) { writeNote(s.dir, doc); return s.publish(); }
     }
@@ -103,12 +126,51 @@ public final class Store {
         } finally { Files.deleteIfExists(tmp); }
     }
 
+    /** Stores a picture in the notebook folder and returns its page-relative path. */
+    public String addImage(String id, Bitmap bitmap) throws Exception {
+        require(bitmap != null && bitmap.getWidth() > 0 && bitmap.getHeight() > 0, "Empty picture");
+        File dir = folder(id);
+        Path images = dir.toPath().resolve("images");
+        Files.createDirectories(images);
+        Path target = null;
+        for (int index = 1; index <= 999 && target == null; index++) {
+            Path candidate = images.resolve("img-" + index + ".png");
+            if (!Files.exists(candidate, NOFOLLOW_LINKS)) target = candidate;
+        }
+        require(target != null, "Too many pictures");
+        Path tmp = Files.createTempFile(images, ".img-", ".tmp");
+        try {
+            try (FileOutputStream out = new FileOutputStream(tmp.toFile())) {
+                require(bitmap.compress(Bitmap.CompressFormat.PNG, 92, out), "Cannot encode the picture");
+                out.getFD().sync();
+            }
+            long size = Files.size(tmp);
+            require(size > 0 && size <= IMG_BYTES, "Picture is too large");
+            Files.move(tmp, target, ATOMIC_MOVE);
+        } finally { Files.deleteIfExists(tmp); }
+        return "images/" + target.getFileName();
+    }
+
+    /** Decodes one stored picture. Call from a worker thread; the caller owns the bitmap. */
+    public Bitmap image(String id, String path) throws Exception {
+        require(path != null && StoreJson.IMAGE.matcher(path).matches(), "Invalid picture path");
+        File file = new File(folder(id), path);
+        fileSize(file, IMG_BYTES);
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        Bitmap bitmap = BitmapFactory.decodeFile(file.getPath(), options);
+        require(bitmap != null, "Cannot decode the picture");
+        return bitmap;
+    }
+
     private final class Stage implements AutoCloseable {
         final File dir; boolean published;
         Stage() throws IOException {
             dir = Files.createTempDirectory(root(), ".new-").toFile();
-            try { Files.createDirectory(dir.toPath().resolve("audio")); }
-            catch (IOException e) { Files.delete(dir.toPath()); throw e; }
+            try {
+                Files.createDirectory(dir.toPath().resolve("audio"));
+                Files.createDirectory(dir.toPath().resolve("images"));
+            } catch (IOException e) { removeTree(dir.toPath()); throw e; }
         }
         String publish() throws IOException {
             synchronized (INDEX) {
@@ -179,9 +241,11 @@ public final class Store {
             require((long)p.getInt("w") * wh[1] == (long)p.getInt("h") * wh[0], "PDF page proportions do not match source.pdf");
         }
         for (String path : clips) {
-            File f = new File(dir, path); bytes += fileSize(f, CLIP_BYTES);
+            boolean image = StoreJson.IMAGE.matcher(path).matches();
+            File f = new File(dir, path); bytes += fileSize(f, image ? IMG_BYTES : CLIP_BYTES);
             require(bytes <= TOTAL, "Notebook assets exceed 128 MiB");
-            if (probeAudio) checkClip(f);
+            if (image) checkPng(f);
+            else if (probeAudio) checkClip(f);
         }
     }
 
@@ -231,7 +295,7 @@ public final class Store {
                 Bitmap bg = index == -1 ? null : render(r, index, edge, PdfRenderer.Page.RENDER_MODE_FOR_PRINT);
                 try {
                     PdfDocument.Page sheet = output.startPage(new PdfDocument.PageInfo.Builder(w,h,i+1).create());
-                    try { InkView.drawPage(sheet.getCanvas(), p, bg); } finally { output.finishPage(sheet); }
+                    try { InkView.drawPage(sheet.getCanvas(), p, bg, this, id); } finally { output.finishPage(sheet); }
                 } finally { if (bg != null) bg.recycle(); }
             }
             output.writeTo(out);

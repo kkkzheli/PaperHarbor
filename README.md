@@ -1,58 +1,86 @@
 # PaperHarbor · 纸港
 
-[English](README.md) · **简体中文**
+**English** · [简体中文](README.zh-CN.md)
 
 A notebook for Android that needs no account, no network and no key. Everything is drawn, typed,
-recognised and recorded on the device, and the app declares neither `INTERNET` nor
+recognised, recorded and converted on the device, and the app declares neither `INTERNET` nor
 `ACCESS_NETWORK_STATE`.
 
-PaperHarbor 1.0 is an independent implementation by **kkkzheli**. It is not affiliated with,
+PaperHarbor 1.1 is an independent implementation by **kkkzheli**. It is not affiliated with,
 licensed by, or derived from Goodnotes; no code, artwork or subscription from that product is used.
 
 ## What it does
 
-- **Shelf** — cover thumbnails, title, page count and date for every notebook; search across
-  titles, typed page text and recognised text; import PDF, images or a PaperHarbor backup; sort by
-  recently edited, title or page count.
-- **Pens** — a hard pen with pressure taper, a soft brush whose width follows speed and pressure,
-  and a translucent highlighter. Tapping the active pen button opens the chooser and the width
-  slider with a live sample.
-- **Eraser** — remove whole strokes, or erase only the area you sweep across. Both modes share a
-  radius control with a preview.
+- **Shelf** — covers show a style and colour you choose for each notebook; search across titles,
+  typed page text, imported document text and recognised text; sort by recently edited, title or
+  page count.
+- **Notebook covers** — four constructions (spine, band, label, plain) and eight colours, picked
+  when the notebook is created or later from the long-press sheet, with a live preview.
+- **Paper** — five patterns (ruled, grid, dot, blank, Cornell) and six paper tints, chosen per
+  notebook and changed per page from *More → Page style*.
+- **Pens** — a hard pen with pressure taper, a soft brush whose width follows speed, pressure and
+  curvature, and a translucent highlighter whose opacity is adjustable from its own chooser.
+- **Eraser** — remove whole strokes, or erase only the area you sweep across; area erasing now cuts
+  shapes too, so one side of a circle can be removed without losing the rest.
 - **Shapes and the magic pen** — line, arrow, rectangle, circle, ellipse, triangle, diamond,
-  pentagon, star and hexagon from one chooser; the magic pen turns a rough sketch into a straight
-  line, a circle, an ellipse, a rectangle or a triangle, and keeps your own stroke when nothing
-  matches.
+  pentagon, star and hexagon; the magic pen turns a rough sketch into a straight line, circle,
+  ellipse, rectangle, diamond or triangle and keeps your own stroke when nothing matches.
+- **Text blocks** — tap the page with the text tool to place editable text with four typefaces,
+  size, colour, bold, italic, underline and left/centre/right alignment. *Scan* reads the page
+  with the bundled OCR, *Formula* converts LaTeX fragments to Unicode maths, *Translate* hands the
+  text to another installed app.
+- **Pictures** — insert a photo or screenshot into the page, move it, duplicate it or delete it.
+- **Roam** — a dedicated mode where one finger moves the page, a double tap zooms and a pinch
+  works as usual, so a dense page can be inspected without switching tools.
 - **Lasso** — select strokes, then drag to move, pull a corner to scale proportionally, or use the
-  grip above the selection to rotate. A small bubble offers duplicate and delete, and *Select all
-  ink* lives in the More sheet.
-- **Palette** — hue/saturation wheel with a separate brightness slider, eight swatches that can be
-  long-pressed to store the current colour, and a recent-colours row.
-- **Pages** — thumbnail grid, bookmarks, ruled/grid/blank templates, duplicate, reorder, delete,
-  and jump to the next bookmark.
+  grip above the selection to rotate; duplicate and delete live in a small bubble.
+- **Palette** — hue/saturation wheel, brightness slider, eight swatches and recent colours.
+- **Pages** — thumbnails, bookmarks, patterns and tints, duplicate, reorder, delete, jump to the
+  next bookmark.
 - **Text and OCR** — typed page text is searchable; printed horizontal Simplified Chinese and
   English are recognised on-device by Tesseract4Android with the bundled `chi_sim` and `eng` models.
-- **Study and audio** — two-sided flashcards with self-rating, and local AAC recordings that can be
-  replayed or removed. The microphone is requested only when you start recording.
-- **Export and backup** — PDF, a single page as PNG, or a `.phnote` archive that keeps ink, text,
-  cards and recordings editable. Restoring creates a new notebook and never overwrites the original.
-- **Settings** — light, dark or system theme, stylus-only drawing, pressure sensitivity, area-erase
-  default, paper for new notes, local storage usage, and links to the author and this project.
-- **Languages** — Simplified Chinese and English, following the device language.
+- **Study and audio** — two-sided flashcards with self-rating, and local AAC recordings.
+- **Import** — PDF, images, `.docx` and `.phnote`. A PDF or Word document becomes a notebook whose
+  original content stays read-only and is annotated with ink, text blocks and pictures.
+- **Export and share** — PDF, one page as PNG, an editable `.phnote`, or a `.docx` whose pages are
+  the rendered pages with your annotations. The share sheet sends any of them to another installed
+  app through a read-only provider.
+- **Settings** — light/dark/system theme, six accent colours, language (system, Chinese, English),
+  stylus-only drawing, pressure sensitivity, highlighter opacity, area-erase default, new-note
+  paper and cover defaults, storage usage, preview-cache clearing, and links to the author, the
+  repository and the releases page.
+- **Languages** — Simplified Chinese and English, following the device language or chosen in
+  Settings.
+
+## Formats
+
+| Format | Import | Annotate | Export |
+|---|---|---|---|
+| `.phnote` | yes, creates a new notebook | yes, ink stays editable | yes — the editable master copy |
+| PDF | yes, the pages are rendered | yes | yes — flattened PDF that keeps the original page format |
+| `.docx` | yes, the text is laid out into pages | yes | yes — `.docx` with each annotated page as a page image |
+| PNG / image | yes, as its own notebook page | yes | yes — current page as PNG |
+| `.doc` (legacy) | no — save it as `.docx` or PDF first | — | — |
+
+PaperHarbor never edits the text or layout of an imported document. The original file is not
+modified either: annotation happens on top, and the export creates a new file.
 
 ## Boundaries
 
+- Translation is not built in: *Translate* opens the system share sheet so another app (if you
+  installed one) can translate the text. This app itself never goes online.
+- A `.docx` import keeps readable text, not Word's layout: tables are flattened, images and styling
+  are dropped, pagination is recalculated for the page size.
+- A PDF or `.docx` export flattens annotations. Only `.phnote` can be reopened and edited as ink.
 - `.goodnotes` documents are **not** imported. Export old material to PDF and annotate that.
 - No account, cloud sync, collaboration, content store, remote AI, Office conversion, synced
   handwriting playback or speech transcription.
-- A PDF export flattens pages and annotations; it is not a substitute for the editable `.phnote`
-  backup. OCR text is not written as an invisible text layer into exported PDFs.
 - **Export a backup before uninstalling.** There is no cloud copy, and `.phnote` is not encrypted —
   it contains your writing and recordings, so store it carefully.
 
 ## Install
 
-Download `PaperHarbor-1.0.0.apk` from the releases page and sideload it. It is a release build
+Download `PaperHarbor-1.1.0.apk` from the releases page and sideload it. It is a release build
 (`debuggable=false`) signed with a locally generated key; the package is
 `io.github.kkkzheli.paperharbor` and Android 8.0 (API 26) or newer is required.
 
@@ -77,7 +105,7 @@ python -I .\tools\verify-apk.py .\app\build\outputs\apk\release\app-release.apk 
 signature and prints the SHA-256. Instrumentation tests run on a dedicated device or emulator with
 `connectedDebugAndroidTest`; `tools/offline-smoke.py` drives the real UI in airplane mode and
 `tools/layout-check.py` checks portrait, landscape and 360 dp. Acceptance notes for this build are
-in [docs/verification-1.0.0.md](docs/verification-1.0.0.md).
+in [docs/verification-1.1.0.md](docs/verification-1.1.0.md).
 
 ## Licence and attribution
 

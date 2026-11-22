@@ -66,13 +66,26 @@ final class Ui {
   private static final int[] COVER_DARK = {
     0xff2c4a42, 0xff5f3a33, 0xff33495e, 0xff5f4d31, 0xff4a4057, 0xff3b5453
   };
+  /** Accent families: light accent, light soft, dark accent, dark soft. */
+  static final int[][] ACCENTS = {
+    {0xffcf613b, 0xffffe6da, 0xffe4815b, 0xff43291e},
+    {0xff3c6f8a, 0xffdfeaf2, 0xff6fb2cf, 0xff1e2f3a},
+    {0xff4e7a5a, 0xffe2ede2, 0xff7fc292, 0xff1f3226},
+    {0xff8a5a7f, 0xffefe2ec, 0xffc48ab7, 0xff33202f},
+    {0xffa87722, 0xfff5ebd6, 0xffe0b25a, 0xff3a2c14},
+    {0xff5a6570, 0xffe6e9ec, 0xff9aa8b4, 0xff262b31}
+  };
+
   private Ui() {}
 
   /** Chooses light or dark from the stored preference and the system setting. */
-  static void install(Context c, int mode) {
+  static void install(Context c, int mode) { install(c, mode, 0); }
+
+  static void install(Context c, int mode, int accent) {
     boolean systemDark = (c.getResources().getConfiguration().uiMode
         & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
     dark = mode == MODE_DARK || (mode == MODE_SYSTEM && systemDark);
+    int index = accent < 0 || accent >= ACCENTS.length ? 0 : accent;
     if (dark) {
       BG = 0xff15130f;
       SURFACE = 0xff211e19;
@@ -104,6 +117,8 @@ final class Ui {
       SHADOW = 0xffd9d0bf;
       DESK = 0xffe7e0d3;
     }
+    ACCENT = dark ? ACCENTS[index][2] : ACCENTS[index][0];
+    ACCENT_SOFT = dark ? ACCENTS[index][3] : ACCENTS[index][1];
   }
 
   static int dp(Context c, float value) {
@@ -565,6 +580,11 @@ final class Ui {
         int cell = Math.max(1, dp(getContext(), minCellDp));
         int columns = Math.max(minColumns, Math.min(maxColumns, Math.max(1, w / cell)));
         if (columns != getNumColumns()) setNumColumns(columns);
+        // Without an explicit column width the grid sizes columns from its first child, which
+        // shrank the shelf cards to the width of their placeholder. Fill the row instead.
+        int available = Math.max(1, w - getPaddingLeft() - getPaddingRight());
+        int width = Math.max(1, available / Math.max(1, columns));
+        if (Math.abs(width - getColumnWidth()) > 1) setColumnWidth(width);
       }
     };
   }

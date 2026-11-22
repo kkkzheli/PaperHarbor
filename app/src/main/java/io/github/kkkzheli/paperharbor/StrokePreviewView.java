@@ -35,6 +35,7 @@ public class StrokePreviewView extends View {
     private String style = "pen";
     private boolean dirty = true;
     private float strokeWidth;
+    private float markerAlpha = .38f;
 
     public StrokePreviewView(Context context) {
         this(context, null);
@@ -57,6 +58,13 @@ public class StrokePreviewView extends View {
         this.argb = argb;
         this.widthUnits = width;
         this.style = style == null ? "pen" : style;
+        invalidate();
+    }
+
+    /** Opacity used by the marker sample; the pen and brush ignore it. */
+    public void setMarkerAlpha(float value) {
+        if (!Float.isFinite(value)) return;
+        markerAlpha = value < .05f ? .05f : value > 1f ? 1f : value;
         invalidate();
     }
 
@@ -168,7 +176,7 @@ public class StrokePreviewView extends View {
         fillPaint.setColor(previewColor);
         strokePaint.setColor(previewColor);
         if ("brush".equals(style)) { canvas.drawPath(envelope, fillPaint); return; }
-        strokePaint.setAlpha("marker".equals(style) ? Math.round(255 * .38f) : 255);
+        strokePaint.setAlpha("marker".equals(style) ? Math.round(255 * markerAlpha) : 255);
         strokePaint.setStrokeWidth(strokeWidth);
         canvas.drawPath(path, strokePaint);
     }

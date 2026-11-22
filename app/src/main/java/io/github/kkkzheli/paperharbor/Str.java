@@ -21,10 +21,16 @@ import java.util.Map;
  */
 final class Str {
   private static final Map<String, String> EN = new HashMap<>();
+  /** 0 follows the system, 1 is Chinese, 2 is English. */
+  private static int override;
 
   private Str() {}
 
+  static void install(int lang) { override = lang < 0 || lang > 2 ? 0 : lang; }
+
   static boolean english() {
+    if (override == 1) return false;
+    if (override == 2) return true;
     return !Locale.getDefault().getLanguage().startsWith("zh");
   }
 
@@ -77,6 +83,19 @@ final class Str {
 
   static String storage(int notes, String bytes) {
     return english() ? notes + (notes == 1 ? " note · " : " notes · ") + bytes : notes + " 本笔记 · " + bytes;
+  }
+
+  static String marker(String width, int percent) {
+    return english() ? "Width " + width + " · Opacity " + percent + "%"
+        : "粗细 " + width + "  ·  不透明度 " + percent + "%";
+  }
+
+  static String textSize(String value) {
+    return english() ? "Size " + value : "字号 " + value;
+  }
+
+  static String pageStyle(String pattern, String tint) {
+    return english() ? pattern + " · " + tint : pattern + " · " + tint;
   }
 
   static String version(String name) {
@@ -397,6 +416,180 @@ final class Str {
         "The recording was not saved; it may be too short or the storage is full");
     put("无法播放这段录音，文件可能缺失、损坏或音频正被占用",
         "Cannot play this recording; the file may be missing, damaged or in use");
+  }
+
+
+  static {
+    put("文字",
+        "Text");
+    put("图片",
+        "Picture");
+    put("漫游",
+        "Roam");
+    put("编辑文字",
+        "Edit text");
+    put("插入文字",
+        "Insert text");
+    put("在这里输入文字",
+        "Type here");
+    put("点按页面开始输入文字",
+        "Tap the page to place text");
+    put("拖动可移动页面，双指缩放；再点一次退出漫游",
+        "Drag to move the page and pinch to zoom; tap again to leave roam");
+    put("当前颜色",
+        "Current colour");
+    put("左对齐",
+        "Align left");
+    put("居中",
+        "Centre");
+    put("右对齐",
+        "Align right");
+    put("识别",
+        "Scan");
+    put("公式",
+        "Formula");
+    put("翻译",
+        "Translate");
+    put("已转换为公式文本",
+        "Converted to formula text");
+    put("先输入需要翻译的文字",
+        "Type the text to translate first");
+    put("没有可用的应用",
+        "No app available");
+    put("正在识别本页…",
+        "Scanning this page…");
+    put("文字不能为空",
+        "The text cannot be empty");
+    put("页面样式",
+        "Page style");
+    put("封面",
+        "Cover");
+    put("插入图片",
+        "Insert picture");
+    put("纸张样式",
+        "PAPER STYLE");
+    put("纸张颜色",
+        "PAPER COLOUR");
+    put("封面样式",
+        "COVER STYLE");
+    put("封面颜色",
+        "COVER COLOUR");
+    put("纸张颜色可在「更多 · 页面样式」里调整",
+        "Paper colour lives in More · Page style");
+    put("无法插入图片",
+        "Cannot insert the picture");
+    put("无法打开图片",
+        "Cannot open the picture");
+    put("无法识别图片格式",
+        "Unrecognised picture format");
+    put("图片解码失败",
+        "The picture could not be decoded");
+    put("语言",
+        "LANGUAGE");
+    put("强调色",
+        "Accent colour");
+    put("默认封面",
+        "Default cover");
+    put("清空缩略图缓存",
+        "Clear preview cache");
+    put("缓存已清空",
+        "Preview cache cleared");
+    put("版本发布 · GitHub",
+        "Releases · GitHub");
+    put("新笔记的样式",
+        "STYLE FOR NEW NOTES");
+    put("荧光笔不透明度",
+        "Highlighter opacity");
+    put("点阵",
+        "Dot grid");
+    put("康奈尔",
+        "Cornell");
+    put("书脊",
+        "Spine");
+    put("横带",
+        "Band");
+    put("标签",
+        "Label");
+    put("素面",
+        "Plain");
+    put("点阵纸",
+        "Dot paper");
+    put("康奈尔纸",
+        "Cornell paper");
+    put("识别在本机完成；翻译会交给手机上已安装的其他应用，本应用不联网。公式把 LaTeX 片段转成 Unicode 数学文本。",
+        "Scanning runs on this device. Translate hands the text to another installed app; this app never goes online. Formula turns LaTeX fragments into Unicode maths text.");
+  }
+
+
+  static {
+    put("分享",
+        "Share");
+    put("分享备份",
+        "Share backup");
+    put("分享 PDF",
+        "Share PDF");
+    put("分享图片",
+        "Share picture");
+    put("导出 DOCX",
+        "Export DOCX");
+    put("Word 文档",
+        "Word document");
+    put("分享失败",
+        "Sharing failed");
+    put("已导出 Word 文档",
+        "Word document exported");
+    put("正在写入 Word 文档…",
+        "Writing the Word document…");
+    put("正在导入 Word 文档…",
+        "Importing the Word document…");
+    put("文档里没有可显示的文本",
+        "The document has no readable text");
+    put("不是 Word 文档（缺少 word/document.xml）",
+        "Not a Word document (word/document.xml is missing)");
+    put("Word 文档内容过大",
+        "The Word document is too large");
+    put("无法编码页面图片",
+        "Cannot encode the page picture");
+    put("正在准备分享…",
+        "Preparing the file to share…");
+  }
+
+
+  static {
+    put("克隆",
+        "Duplicate");
+    put("编辑",
+        "Edit");
+    put("衬线",
+        "Serif");
+    put("无衬线",
+        "Sans-serif");
+    put("等宽",
+        "Monospace");
+    put("手写",
+        "Handwriting");
+    put("上次自评：",
+        "Last rating: ");
+    put("纸港由 kkkzheli 独立设计与实现：不登录、不联网、不上传，笔迹、文字、闪卡和录音只保存在这台设备上。",
+        "PaperHarbor is designed and built by kkkzheli: no sign-in, no network, no uploads — ink, text, flashcards and recordings stay on this device.");
+    put("OCR 模型校验失败: ",
+        "OCR model check failed: ");
+    put("OCR 模型超过预期大小",
+        "The OCR model is larger than expected");
+    put("图片超过 48 MiB",
+        "The picture exceeds 48 MiB");
+    put("无效的页面位图",
+        "Invalid page bitmap");
+    put("无法初始化离线 OCR 模型",
+        "Cannot initialise the offline OCR model");
+    put("无法加载离线 OCR 原生库",
+        "Cannot load the offline OCR library");
+    put("无法读取硬件位图",
+        "Cannot read the hardware bitmap");
+    put("离线 OCR 引擎未返回结果",
+        "The offline OCR engine returned nothing");
+    put("请先将页面渲染为较小的软件位图",
+        "Render the page as a smaller software bitmap first");
   }
 
   private static void put(String chinese, String english) {

@@ -44,6 +44,7 @@ final class LibraryScreen extends FrameLayout {
     void importPdf();
     void importImage();
     void restoreBackup();
+    void importDocx();
     void exportPdf(String id);
     void backup(String id);
     void settings();
@@ -54,6 +55,8 @@ final class LibraryScreen extends FrameLayout {
     int pages;
     long modified;
     JSONObject cover;
+    String coverStyle = "spine";
+    int coverColor = CoverArt.PALETTE[0];
     final StringBuilder search = new StringBuilder();
   }
 
@@ -152,7 +155,7 @@ final class LibraryScreen extends FrameLayout {
     shelf.setLayoutParams(shelfLp);
     body.addView(shelf);
 
-    grid = Ui.grid(a, 168, 2, 5);
+    grid = Ui.grid(a, 150, 2, 4);
     grid.setNumColumns(2);
     grid.setHorizontalSpacing(Ui.dp(a, 14));
     grid.setVerticalSpacing(Ui.dp(a, 22));
@@ -212,6 +215,10 @@ final class LibraryScreen extends FrameLayout {
             JSONArray pages = doc.getJSONArray("pages");
             m.pages = pages.length();
             m.cover = pages.optJSONObject(0);
+            JSONObject design = doc.optJSONObject("cover");
+            m.coverStyle = design == null ? "spine" : design.optString("style", "spine");
+            m.coverColor = design == null ? Ui.coverColor(m.title)
+                : design.optInt("color", Ui.coverColor(m.title));
             m.search.append(m.title.toLowerCase(Locale.ROOT)).append('\n');
             for (int i = 0; i < pages.length(); i++) {
               JSONObject p = pages.optJSONObject(i);
@@ -289,36 +296,23 @@ final class LibraryScreen extends FrameLayout {
       LinearLayout card = (LinearLayout) convertView;
       if (card == null) {
         card = Ui.column(a);
-        FrameLayout cover = new AspectFrame(a, .74f);
-        cover.setClipToOutline(true);
-        cover.setOutlineProvider(new ViewOutlineProvider() {
+        FrameLayout frame = new AspectFrame(a, .74f);
+        frame.setClipToOutline(true);
+        frame.setOutlineProvider(new ViewOutlineProvider() {
           @Override public void getOutline(View v, android.graphics.Outline outline) {
             outline.setRoundRect(0, 0, v.getWidth(), v.getHeight(), Ui.dp(a, 16));
           }
         });
-        cover.setBackgroundColor(Ui.SURFACE);
-        cover.setForeground(Ui.roundStroke(a, Color.TRANSPARENT, Ui.LINE, 16, .8f));
-        ImageView image = new ImageView(a);
-        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        cover.addView(image, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        ImageView placeholder = new ImageView(a);
-        placeholder.setImageResource(R.drawable.ic_notebook);
-        placeholder.setColorFilter(0xffd9d0bf);
-        FrameLayout.LayoutParams php = new FrameLayout.LayoutParams(Ui.dp(a, 34), Ui.dp(a, 34));
-        php.gravity = Gravity.CENTER;
-        cover.addView(placeholder, php);
-        View spine = new View(a);
-        FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(Ui.dp(a, 5), ViewGroup.LayoutParams.MATCH_PARENT);
-        spine.setLayoutParams(slp);
-        cover.addView(spine);
+        CoverArt cover = new CoverArt(a);
+        frame.addView(cover, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         TextView badge = Ui.text(a, "", 10, Ui.INK);
         badge.setBackground(Ui.round(a, 0xe6fffdf6, 9));
         badge.setPadding(Ui.dp(a, 7), Ui.dp(a, 3), Ui.dp(a, 7), Ui.dp(a, 3));
         FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         blp.gravity = Gravity.END | Gravity.BOTTOM;
         blp.setMargins(0, 0, Ui.dp(a, 8), Ui.dp(a, 8));
-        cover.addView(badge, blp);
-        card.addView(cover, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        frame.addView(badge, blp);
+        card.addView(frame, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         LinearLayout info = Ui.column(a);
         info.setPadding(Ui.dp(a, 3), Ui.dp(a, 8), Ui.dp(a, 3), 0);
         TextView title = Ui.text(a, "", 15, Ui.INK);
@@ -330,27 +324,24 @@ final class LibraryScreen extends FrameLayout {
         meta.setPadding(0, Ui.dp(a, 2), 0, 0);
         info.addView(meta);
         card.addView(info);
-        card.setTag(new Holder(cover, image, placeholder, spine, badge, title, meta));
+        card.setTag(new Holder(cover, badge, title, meta));
       }
       Holder h = (Holder) card.getTag();
       h.title.setText(m.title);
       String date = m.modified > 0 ? Str.date(m.modified) : "";
       h.meta.setText(Str.noteMeta(m.pages, date));
       h.badge.setText(Str.cardBadge(m.pages));
-      h.spine.setBackgroundColor(Ui.coverColor(m.title));
-      h.image.setImageDrawable(null);
-      h.image.setTag(m.id);
-      h.placeholder.setVisibility(VISIBLE);
+      h.cover.setCover(m.coverStyle, m.coverColor);
+      h.cover.setTitle(m.title);
+      h.cover.setTag(m.id);
+      h.cover.setPage(null);
       final String id = m.id;
       final JSONObject cover = m.cover;
       worker.execute(() -> {
         try {
           android.graphics.Bitmap bitmap = Thumbnails.render(a, store, id, cover, Ui.dp(a, 210));
           a.runOnUiThread(() -> {
-            if (id.equals(h.image.getTag())) {
-              h.image.setImageBitmap(bitmap);
-              h.placeholder.setVisibility(GONE);
-            }
+            if (id.equals(h.cover.getTag())) h.cover.setPage(bitmap);
           });
         } catch (Exception ignored) { }
       });
@@ -360,12 +351,10 @@ final class LibraryScreen extends FrameLayout {
   }
 
   private static final class Holder {
-    final FrameLayout cover;
-    final ImageView image, placeholder;
-    final View spine;
+    final CoverArt cover;
     final TextView badge, title, meta;
-    Holder(FrameLayout c, ImageView i, ImageView p, View s, TextView b, TextView t, TextView m) {
-      cover = c; image = i; placeholder = p; spine = s; badge = b; title = t; meta = m;
+    Holder(CoverArt c, TextView b, TextView t, TextView m) {
+      cover = c; badge = b; title = t; meta = m;
     }
   }
 
@@ -420,7 +409,7 @@ final class LibraryScreen extends FrameLayout {
       rows.addView(row, new LinearLayout.LayoutParams(lp));
     }
     content.addView(rows);
-    Dialog d = Ui.sheet(a, content, false);
+    Dialog d = Ui.sheet(a, content, true);
     ref[0] = d;
     d.show();
   }
@@ -436,6 +425,23 @@ final class LibraryScreen extends FrameLayout {
     content.setPadding(Ui.dp(a, 20), 0, Ui.dp(a, 20), Ui.dp(a, 22));
     Dialog[] ref = new Dialog[1];
     content.addView(Ui.sheetHeader(a, "新建笔记", closer(ref)));
+
+    final String[] style = {prefs.coverStyle()};
+    final int[] coverColor = {prefs.coverColor()};
+    final String[] paper = {prefs.paper()};
+    final int[] tint = {prefs.paperTint()};
+
+    LinearLayout top = Ui.row(a);
+    LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    tlp.topMargin = Ui.dp(a, 6);
+    content.addView(top, tlp);
+    final CoverArt preview = new CoverArt(a);
+    preview.setCover(style[0], coverColor[0]);
+    preview.setTitle(Str.of("未命名笔记"));
+    LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(Ui.dp(a, 84), Ui.dp(a, 112));
+    plp.rightMargin = Ui.dp(a, 14);
+    top.addView(preview, plp);
+
     EditText name = new EditText(a);
     name.setHint(Str.of("笔记名称（可留空）"));
     name.setHintTextColor(0xff9b9486);
@@ -444,56 +450,130 @@ final class LibraryScreen extends FrameLayout {
     name.setSingleLine(true);
     name.setBackground(Ui.round(a, Ui.SURFACE_SOFT, 14));
     name.setPadding(Ui.dp(a, 16), Ui.dp(a, 12), Ui.dp(a, 16), Ui.dp(a, 12));
-    LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-    nlp.topMargin = Ui.dp(a, 12);
-    content.addView(name, nlp);
-    TextView label = Ui.label(a, "纸张", 11, Ui.MUTED);
-    label.setPadding(0, Ui.dp(a, 18), 0, Ui.dp(a, 8));
-    content.addView(label);
-    String[] papers = {"ruled", "grid", "plain"};
-    String[] paperNames = {"横线", "方格", "空白"};
-    LinearLayout row = Ui.row(a);
-    int preset = 0;
-    for (int i = 0; i < papers.length; i++) if (papers[i].equals(prefs.paper())) preset = i;
-    final int[] selected = {preset};
-    List<TemplatePreview> previews = new ArrayList<>();
-    for (int i = 0; i < papers.length; i++) {
+    LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+    nlp.gravity = Gravity.CENTER_VERTICAL;
+    top.addView(name, nlp);
+    name.addTextChangedListener(new TextWatcher() {
+      public void beforeTextChanged(CharSequence s, int st, int c, int af) { }
+      public void onTextChanged(CharSequence s, int st, int b, int c) {
+        String value = s.toString().trim();
+        preview.setTitle(value.isEmpty() ? Str.of("未命名笔记") : value);
+      }
+      public void afterTextChanged(Editable s) { }
+    });
+
+    content.addView(Ui.sectionLabel(a, "封面样式"));
+    LinearLayout styles = Ui.row(a);
+    final LinearLayout[] styleTiles = new LinearLayout[CoverArt.STYLES.length];
+    for (int i = 0; i < CoverArt.STYLES.length; i++) {
+      final String key = CoverArt.STYLES[i];
+      LinearLayout cell = Ui.column(a);
+      cell.setGravity(Gravity.CENTER);
+      CoverArt sample = new CoverArt(a);
+      sample.setCover(key, coverColor[0]);
+      cell.addView(sample, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(a, 54)));
+      LinearLayout tile = Ui.choiceTile(a, cell, CoverArt.STYLE_NAMES[i], null);
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+      if (i > 0) lp.leftMargin = Ui.dp(a, 6);
+      tile.setLayoutParams(lp);
       final int index = i;
+      tile.setOnClickListener(v -> {
+        style[0] = key;
+        for (int j = 0; j < styleTiles.length; j++) Ui.setChosen(styleTiles[j], j == index);
+        preview.setCover(key, coverColor[0]);
+      });
+      styleTiles[i] = tile;
+      styles.addView(tile);
+    }
+    for (int i = 0; i < styleTiles.length; i++)
+      Ui.setChosen(styleTiles[i], CoverArt.STYLES[i].equals(style[0]));
+    content.addView(styles);
+
+    LinearLayout colours = Ui.row(a);
+    colours.setGravity(Gravity.CENTER);
+    colours.setPadding(0, Ui.dp(a, 10), 0, 0);
+    content.addView(colours);
+    for (int i = 0; i < CoverArt.PALETTE.length; i++) {
+      final int value = CoverArt.PALETTE[i];
+      Ui.ColorChip chip = new Ui.ColorChip(a);
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Ui.dp(a, 30), Ui.dp(a, 30));
+      if (i > 0) lp.leftMargin = Ui.dp(a, 8);
+      chip.setLayoutParams(lp);
+      chip.setColor(value);
+      chip.setSelectedChip(value == coverColor[0]);
+      chip.setContentDescription(Str.of("封面颜色"));
+      chip.setOnClickListener(v -> {
+        coverColor[0] = value;
+        for (int j = 0; j < colours.getChildCount(); j++)
+          ((Ui.ColorChip) colours.getChildAt(j)).setSelectedChip(colours.getChildAt(j) == chip);
+        preview.setCover(style[0], value);
+      });
+      colours.addView(chip);
+    }
+
+    content.addView(Ui.sectionLabel(a, "纸张"));
+    LinearLayout papers = Ui.row(a);
+    final LibraryScreen.TemplatePreview[] previews = new LibraryScreen.TemplatePreview[InkPaper.PATTERNS.length];
+    for (int i = 0; i < InkPaper.PATTERNS.length; i++) {
+      final String key = InkPaper.PATTERNS[i];
       LinearLayout cell = Ui.column(a);
       cell.setGravity(Gravity.CENTER);
       LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-      if (i > 0) clp.leftMargin = Ui.dp(a, 10);
+      if (i > 0) clp.leftMargin = Ui.dp(a, 6);
       cell.setLayoutParams(clp);
-      TemplatePreview preview = new TemplatePreview(a, papers[i]);
-      LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(a, 96));
-      preview.setLayoutParams(plp);
-      preview.setOnClickListener(v -> {
-        selected[0] = index;
-        for (int j = 0; j < previews.size(); j++) previews.get(j).setChosen(j == index);
+      LibraryScreen.TemplatePreview previewPaper = new LibraryScreen.TemplatePreview(a, key);
+      previewPaper.setTint(tint[0]);
+      previewPaper.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(a, 78)));
+      previewPaper.setOnClickListener(v -> {
+        paper[0] = key;
+        for (int j = 0; j < previews.length; j++) previews[j].setChosen(InkPaper.PATTERNS[j].equals(key));
       });
-      cell.addView(preview);
-      TextView nameTv = Ui.text(a, paperNames[i], 11.5f, Ui.MUTED);
-      nameTv.setGravity(Gravity.CENTER);
-      nameTv.setPadding(0, Ui.dp(a, 6), 0, 0);
-      cell.addView(nameTv);
-      row.addView(cell);
-      previews.add(preview);
+      previews[i] = previewPaper;
+      cell.addView(previewPaper);
+      TextView label = Ui.text(a, InkPaper.PATTERN_NAMES[i], 10, Ui.MUTED);
+      label.setGravity(Gravity.CENTER);
+      label.setPadding(0, Ui.dp(a, 4), 0, 0);
+      cell.addView(label);
+      papers.addView(cell);
     }
-    for (int i = 0; i < previews.size(); i++) previews.get(i).setChosen(i == preset);
-    LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-    rlp.topMargin = Ui.dp(a, 4);
-    content.addView(row, rlp);
+    for (int i = 0; i < previews.length; i++) previews[i].setChosen(InkPaper.PATTERNS[i].equals(paper[0]));
+    content.addView(papers);
+
+    LinearLayout tints = Ui.row(a);
+    tints.setGravity(Gravity.CENTER);
+    tints.setPadding(0, Ui.dp(a, 10), 0, 0);
+    content.addView(tints);
+    for (int i = 0; i < InkPaper.TINTS.length; i++) {
+      final int value = InkPaper.TINTS[i];
+      Ui.ColorChip chip = new Ui.ColorChip(a);
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Ui.dp(a, 30), Ui.dp(a, 30));
+      if (i > 0) lp.leftMargin = Ui.dp(a, 8);
+      chip.setLayoutParams(lp);
+      chip.setColor(value);
+      chip.setSelectedChip(value == tint[0]);
+      chip.setContentDescription(Str.of("纸张颜色"));
+      chip.setOnClickListener(v -> {
+        tint[0] = value;
+        for (int j = 0; j < tints.getChildCount(); j++)
+          ((Ui.ColorChip) tints.getChildAt(j)).setSelectedChip(tints.getChildAt(j) == chip);
+        for (LibraryScreen.TemplatePreview p : previews) p.setTint(value);
+      });
+      tints.addView(chip);
+    }
+
     LinearLayout footer = Ui.row(a);
     footer.setGravity(Gravity.END);
     LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-    flp.topMargin = Ui.dp(a, 22);
+    flp.topMargin = Ui.dp(a, 18);
     View create = Ui.pillButton(a, R.drawable.ic_check, "创建", Ui.ACCENT, Ui.WHITE, () -> {
       String title = name.getText().toString().trim();
-      if (title.isEmpty()) title = "未命名笔记";
-      final String paper = papers[selected[0]];
-      final String finalTitle = title;
+      if (title.isEmpty()) title = Str.of("未命名笔记");
+      prefs.setCoverStyle(style[0]);
+      prefs.setCoverColor(coverColor[0]);
+      prefs.setPaper(paper[0]);
+      prefs.setPaperTint(tint[0]);
       if (ref[0] != null) ref[0].dismiss();
-      createNote(finalTitle, paper);
+      createNote(title, paper[0], tint[0], style[0], coverColor[0]);
     });
     footer.addView(create);
     content.addView(footer, flp);
@@ -502,11 +582,11 @@ final class LibraryScreen extends FrameLayout {
     d.show();
   }
 
-  private void createNote(String title, String paper) {
+  private void createNote(String title, String paper, int tint, String coverStyle, int coverColor) {
     final String finalTitle = title;
     worker.execute(() -> {
       try {
-        String id = store.create(finalTitle, paper);
+        String id = store.create(finalTitle, paper, tint, coverStyle, coverColor);
         a.runOnUiThread(() -> host.open(id, 0));
       } catch (Exception e) {
         a.runOnUiThread(() -> showError("无法创建笔记", e));
@@ -523,12 +603,14 @@ final class LibraryScreen extends FrameLayout {
     LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
     rlp.topMargin = Ui.dp(a, 10);
     content.addView(row, rlp);
-    String[][] items = {{"PDF", "PDF 文档"}, {"图片", "图片或照片"}, {"备份", "纸港备份"}};
-    int[] icons = {R.drawable.ic_pdf, R.drawable.ic_image, R.drawable.ic_backup};
+    String[][] items = {{"PDF", "PDF 文档"}, {"图片", "图片或照片"},
+        {"备份", "纸港备份"}, {"Word", "Word 文档"}};
+    int[] icons = {R.drawable.ic_pdf, R.drawable.ic_image, R.drawable.ic_backup, R.drawable.ic_word};
     Runnable[] actions = {
         () -> { ref[0].dismiss(); host.importPdf(); },
         () -> { ref[0].dismiss(); host.importImage(); },
-        () -> { ref[0].dismiss(); host.restoreBackup(); }
+        () -> { ref[0].dismiss(); host.restoreBackup(); },
+        () -> { ref[0].dismiss(); host.importDocx(); }
     };
     for (int i = 0; i < items.length; i++) {
       View tile = Ui.iconTile(a, icons[i], items[i][1], false, actions[i]);
@@ -551,6 +633,10 @@ final class LibraryScreen extends FrameLayout {
     lp.topMargin = Ui.dp(a, 6);
     rows.addView(Ui.iconRow(a, R.drawable.ic_rename, "重命名", false,
         () -> { ref[0].dismiss(); showRename(m); }), new LinearLayout.LayoutParams(lp));
+    rows.addView(Ui.iconRow(a, R.drawable.ic_cover, "封面", false,
+        () -> { ref[0].dismiss(); loadForCover(m); }), new LinearLayout.LayoutParams(lp));
+    rows.addView(Ui.iconRow(a, R.drawable.ic_backup, "分享备份", false,
+        () -> { ref[0].dismiss(); shareBackup(m); }), new LinearLayout.LayoutParams(lp));
     rows.addView(Ui.iconRow(a, R.drawable.ic_export, "导出 PDF", false,
         () -> { ref[0].dismiss(); host.exportPdf(m.id); }), new LinearLayout.LayoutParams(lp));
     rows.addView(Ui.iconRow(a, R.drawable.ic_backup, "备份可编辑笔记 .phnote", false,
@@ -558,7 +644,7 @@ final class LibraryScreen extends FrameLayout {
     rows.addView(Ui.iconRow(a, R.drawable.ic_trash, "删除笔记", true,
         () -> { ref[0].dismiss(); confirmDelete(m); }), new LinearLayout.LayoutParams(lp));
     content.addView(rows);
-    Dialog d = Ui.sheet(a, content, false);
+    Dialog d = Ui.sheet(a, content, true);
     ref[0] = d;
     d.show();
   }
@@ -594,6 +680,126 @@ final class LibraryScreen extends FrameLayout {
           a.runOnUiThread(this::load);
         } catch (Exception e) {
           a.runOnUiThread(() -> showError("重命名失败", e));
+        }
+      });
+    }));
+    content.addView(footer, flp);
+    Dialog d = Ui.sheet(a, content, true);
+    ref[0] = d;
+    d.show();
+  }
+
+  /** Packs the note and hands the .phnote to another app through the system share sheet. */
+  private void shareBackup(final Meta m) {
+    worker.execute(() -> {
+      try {
+        File dir = ShareProvider.folder(a);
+        File[] old = dir.listFiles();
+        if (old != null) for (File file : old) if (file.isFile()) file.delete();
+        final File target = Share.file(a, Share.stem(m.title) + ".phnote");
+        JSONObject doc = store.load(m.id);
+        try (java.io.OutputStream out = new java.io.FileOutputStream(target)) {
+          store.backup(m.id, doc, out);
+        }
+        a.runOnUiThread(() -> Share.send(a, target, Share.PHNOTE, m.title));
+      } catch (final Exception e) {
+        a.runOnUiThread(() -> showError("分享失败", e));
+      }
+    });
+  }
+
+  private void loadForCover(final Meta m) {
+    worker.execute(() -> {
+      try {
+        final JSONObject doc = store.load(m.id);
+        a.runOnUiThread(() -> showCoverEditor(m, doc));
+      } catch (final Exception e) {
+        a.runOnUiThread(() -> showError("无法读取笔记", e));
+      }
+    });
+  }
+
+  private void showCoverEditor(Meta m, JSONObject doc) {
+    LinearLayout content = Ui.column(a);
+    content.setPadding(Ui.dp(a, 20), 0, Ui.dp(a, 20), Ui.dp(a, 22));
+    Dialog[] ref = new Dialog[1];
+    content.addView(Ui.sheetHeader(a, "封面", closer(ref)));
+    JSONObject cover = doc.optJSONObject("cover");
+    final String[] style = {cover == null ? m.coverStyle : cover.optString("style", m.coverStyle)};
+    final int[] color = {cover == null ? m.coverColor : cover.optInt("color", m.coverColor)};
+
+    final CoverArt preview = new CoverArt(a);
+    preview.setCover(style[0], color[0]);
+    preview.setTitle(m.title);
+    LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(Ui.dp(a, 96), Ui.dp(a, 128));
+    plp.gravity = Gravity.CENTER_HORIZONTAL;
+    plp.topMargin = Ui.dp(a, 8);
+    content.addView(preview, plp);
+
+    content.addView(Ui.sectionLabel(a, "封面样式"));
+    LinearLayout styles = Ui.row(a);
+    final LinearLayout[] styleTiles = new LinearLayout[CoverArt.STYLES.length];
+    for (int i = 0; i < CoverArt.STYLES.length; i++) {
+      final String key = CoverArt.STYLES[i];
+      LinearLayout cell = Ui.column(a);
+      cell.setGravity(Gravity.CENTER);
+      CoverArt sample = new CoverArt(a);
+      sample.setCover(key, color[0]);
+      cell.addView(sample, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(a, 58)));
+      LinearLayout tile = Ui.choiceTile(a, cell, CoverArt.STYLE_NAMES[i], null);
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+      if (i > 0) lp.leftMargin = Ui.dp(a, 6);
+      tile.setLayoutParams(lp);
+      final int index = i;
+      tile.setOnClickListener(v -> {
+        style[0] = key;
+        for (int j = 0; j < styleTiles.length; j++) Ui.setChosen(styleTiles[j], j == index);
+        preview.setCover(key, color[0]);
+      });
+      styleTiles[i] = tile;
+      styles.addView(tile);
+    }
+    for (int i = 0; i < styleTiles.length; i++)
+      Ui.setChosen(styleTiles[i], CoverArt.STYLES[i].equals(style[0]));
+    content.addView(styles);
+
+    content.addView(Ui.sectionLabel(a, "封面颜色"));
+    LinearLayout colours = Ui.row(a);
+    colours.setGravity(Gravity.CENTER);
+    for (int i = 0; i < CoverArt.PALETTE.length; i++) {
+      final int value = CoverArt.PALETTE[i];
+      Ui.ColorChip chip = new Ui.ColorChip(a);
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Ui.dp(a, 32), Ui.dp(a, 32));
+      if (i > 0) lp.leftMargin = Ui.dp(a, 8);
+      chip.setLayoutParams(lp);
+      chip.setColor(value);
+      chip.setSelectedChip(value == color[0]);
+      chip.setContentDescription(Str.of("封面颜色"));
+      chip.setOnClickListener(v -> {
+        color[0] = value;
+        for (int j = 0; j < colours.getChildCount(); j++)
+          ((Ui.ColorChip) colours.getChildAt(j)).setSelectedChip(colours.getChildAt(j) == chip);
+        preview.setCover(style[0], value);
+      });
+      colours.addView(chip);
+    }
+    content.addView(colours);
+
+    LinearLayout footer = Ui.row(a);
+    footer.setGravity(Gravity.END);
+    LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    flp.topMargin = Ui.dp(a, 18);
+    footer.addView(Ui.pillButton(a, R.drawable.ic_check, "保存", Ui.INK, Ui.ON_INK, () -> {
+      try {
+        doc.put("cover", new JSONObject().put("style", style[0]).put("color", color[0]));
+      } catch (Exception ignored) { }
+      ref[0].dismiss();
+      worker.execute(() -> {
+        try {
+          store.save(m.id, doc);
+          a.runOnUiThread(this::load);
+        } catch (final Exception e) {
+          a.runOnUiThread(() -> showError("保存失败", e));
         }
       });
     }));
@@ -664,14 +870,20 @@ final class LibraryScreen extends FrameLayout {
     }
     @Override protected void onMeasure(int widthSpec, int heightSpec) {
       int width = MeasureSpec.getSize(widthSpec);
+      if (MeasureSpec.getMode(widthSpec) == MeasureSpec.UNSPECIFIED || width <= 0) {
+        // A child with no intrinsic size (a drawn cover) would otherwise collapse to zero width.
+        width = Math.max(1, getResources().getDisplayMetrics().widthPixels / 3);
+      }
       int height = Math.round(width / ratio);
-      super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
+      super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+          MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
     }
   }
 
   /** Miniature paper swatch used by the template picker. */
   static final class TemplatePreview extends View {
-    private final String paper;
+    private String paper;
+    private int tint = Ui.PAPER;
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
@@ -687,23 +899,34 @@ final class LibraryScreen extends FrameLayout {
     }
 
     void setChosen(boolean on) { selected = on; invalidate(); }
+    void setTint(int value) { tint = value; invalidate(); }
+    void setPaper(String value) { paper = value; invalidate(); }
 
     @Override protected void onDraw(Canvas c) {
       float d = getResources().getDisplayMetrics().density;
       rect.set(d, d, getWidth() - d, getHeight() - d);
-      fill.setColor(Ui.PAPER);
+      fill.setColor(tint);
       c.drawRoundRect(rect, 10 * d, 10 * d, fill);
       int save = c.save();
       clipPath.rewind();
       clipPath.addRoundRect(rect, 10 * d, 10 * d, android.graphics.Path.Direction.CW);
       c.clipPath(clipPath);
-      line.setColor(0xffe2dccf);
+      line.setColor(InkPaper.darkTint(tint) ? 0x40ffffff : 0xffe2dccf);
       line.setStrokeWidth(.8f * d);
       if ("ruled".equals(paper)) {
         for (float y = rect.top + 18 * d; y < rect.bottom; y += 12 * d) c.drawLine(rect.left, y, rect.right, y, line);
       } else if ("grid".equals(paper)) {
         for (float y = rect.top + 12 * d; y < rect.bottom; y += 12 * d) c.drawLine(rect.left, y, rect.right, y, line);
         for (float x = rect.left + 12 * d; x < rect.right; x += 12 * d) c.drawLine(x, rect.top, x, rect.bottom, line);
+      } else if ("dot".equals(paper)) {
+        fill.setColor(InkPaper.darkTint(tint) ? 0x66ffffff : 0xffd5cec0);
+        for (float y = rect.top + 10 * d; y < rect.bottom; y += 12 * d)
+          for (float x = rect.left + 10 * d; x < rect.right; x += 12 * d) c.drawCircle(x, y, .9f * d, fill);
+      } else if ("cornell".equals(paper)) {
+        for (float y = rect.top + 16 * d; y < rect.bottom; y += 12 * d) c.drawLine(rect.left, y, rect.right, y, line);
+        line.setStrokeWidth(1.3f * d);
+        c.drawLine(rect.left, rect.top + 26 * d, rect.right, rect.top + 26 * d, line);
+        c.drawLine(rect.left + 26 * d, rect.top + 26 * d, rect.left + 26 * d, rect.bottom, line);
       }
       c.restoreToCount(save);
       line.setStyle(Paint.Style.STROKE);

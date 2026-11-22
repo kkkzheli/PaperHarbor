@@ -70,10 +70,65 @@ final class Prefs {
 
   String paper() {
     String value = p.getString("paper", "ruled");
-    return "grid".equals(value) || "plain".equals(value) || "ruled".equals(value) ? value : "ruled";
+    return InkPaper.pattern(value) ? value : "ruled";
   }
 
   void setPaper(String paper) { p.edit().putString("paper", paper).apply(); }
+
+  int paperTint() {
+    int value = p.getInt("paper.tint", InkPaper.TINTS[0]);
+    for (int candidate : InkPaper.TINTS) if (candidate == value) return value;
+    return InkPaper.TINTS[0];
+  }
+
+  void setPaperTint(int tint) { p.edit().putInt("paper.tint", tint).apply(); }
+
+  String coverStyle() {
+    String value = p.getString("cover.style", "spine");
+    for (String candidate : CoverArt.STYLES) if (candidate.equals(value)) return value;
+    return "spine";
+  }
+
+  void setCoverStyle(String style) { p.edit().putString("cover.style", style).apply(); }
+
+  int coverColor() { return p.getInt("cover.color", CoverArt.PALETTE[0]); }
+
+  void setCoverColor(int color) { p.edit().putInt("cover.color", color).apply(); }
+
+  /** Marker opacity factor, 0.15–1. */
+  float markerAlpha() {
+    float value = p.getFloat("marker.alpha", .38f);
+    return value < .15f || value > 1f ? .38f : value;
+  }
+
+  void setMarkerAlpha(float value) { p.edit().putFloat("marker.alpha", value).apply(); }
+
+  /** 0 follows the system, 1 is Chinese, 2 is English. */
+  int lang() {
+    int value = p.getInt("lang", 0);
+    return value < 0 || value > 2 ? 0 : value;
+  }
+
+  void setLang(int value) { p.edit().putInt("lang", value).apply(); }
+
+  /** Index into {@link Ui#ACCENTS}. */
+  int accent() {
+    int value = p.getInt("accent", 0);
+    return value < 0 || value >= Ui.ACCENTS.length ? 0 : value;
+  }
+
+  void setAccent(int value) { p.edit().putInt("accent", value).apply(); }
+
+  String textFont() { return PageText.fontName(p.getString("text.font", "serif")); }
+
+  void setTextFont(String font) { p.edit().putString("text.font", font).apply(); }
+
+  float textSize() {
+    float value = p.getFloat("text.size", 24f);
+    return value < PageText.MIN_SIZE || value > 72 ? 24f : value;
+  }
+
+  void setTextSize(float size) { p.edit().putFloat("text.size", size).apply(); }
 
   int[] slots() {
     String raw = p.getString("slots", null);

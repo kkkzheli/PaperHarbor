@@ -6,13 +6,16 @@ package io.github.kkkzheli.paperharbor;
 
 import android.app.Activity;
 import android.app.Dialog;
+import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputFilter;
@@ -40,6 +43,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -54,10 +58,12 @@ final class EditorScreen extends FrameLayout {
     void exportPdf(String id, JSONObject snapshot);
     void exportImage(String id, JSONObject snapshot, int page);
     void backup(String id, JSONObject snapshot);
+    void exportDocx(String id, JSONObject snapshot);
+    void pickImage();
   }
 
   private static final String[] TOOL_KEYS =
-      {"pen", "brush", "marker", "erase", "lasso", "shape", "magic"};
+      {"pen", "brush", "marker", "erase", "lasso", "shape", "magic", "text", "image", "roam"};
 
   private final Activity a;
   private final Store store;
@@ -92,8 +98,9 @@ final class EditorScreen extends FrameLayout {
   private ImageButton bookmarkButton;
   private ImageButton undoButton, redoButton;
   private ImageButton penButton, markerButton, eraserButton, lassoButton, shapeButton, magicButton;
+  private ImageButton textButton, imageButton, roamButton, objectEditButton;
   private ColorChipButton colorButton;
-  private LinearLayout selectionBubble;
+  private LinearLayout selectionBubble, objectBubble;
   private View zoomChip;
 
   EditorScreen(Activity activity, Store store, Prefs prefs, StudyAudio study, String id, JSONObject doc, int page, Host host) {
@@ -164,12 +171,17 @@ final class EditorScreen extends FrameLayout {
     stage.setBackgroundColor(Ui.CANVAS);
     column.addView(stage, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
     ink = new InkView(a);
+    ink.attach(store, id);
     ink.setContentDescription("笔记画布");
     ink.setListener(new InkView.Listener() {
       @Override public void onSelectionChanged(boolean hasSelection, RectF rect) {
         updateSelectionBubble(hasSelection, rect);
       }
       @Override public void onZoomChanged(float zoom) { updateZoomChip(zoom); }
+      @Override public void onObjectChanged(boolean hasObject, boolean isText, RectF rect) {
+        updateObjectBubble(hasObject, isText, rect);
+      }
+      @Override public void onTextRequested(float x, float y) { showTextComposer(null, x, y); }
     });
     stage.addView(ink, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
@@ -191,6 +203,28 @@ final class EditorScreen extends FrameLayout {
     selectionBubble.setLayoutParams(bubbleLp);
     selectionBubble.setVisibility(GONE);
     stage.addView(selectionBubble);
+
+    objectBubble = Ui.row(a);
+    objectBubble.setBackground(Ui.round(a, Ui.INK, 24));
+    objectBubble.setElevation(Ui.dp(a, 10));
+    objectBubble.setPadding(Ui.dp(a, 2), Ui.dp(a, 2), Ui.dp(a, 2), Ui.dp(a, 2));
+    objectEditButton = Ui.icon(a, R.drawable.ic_rename, "编辑", 40, Ui.ON_INK, this::editSelectedText);
+    objectBubble.addView(objectEditButton);
+    objectBubble.addView(Ui.icon(a, R.drawable.ic_duplicate, "克隆", 40, Ui.ON_INK, () -> {
+      ink.duplicateObject();
+      changed();
+      updateHistory();
+    }));
+    objectBubble.addView(Ui.icon(a, R.drawable.ic_trash, "删除", 40, Ui.ON_INK, () -> {
+      ink.deleteObject();
+      changed();
+      updateHistory();
+    }));
+    FrameLayout.LayoutParams objectLp = new FrameLayout.LayoutParams(
+        Ui.dp(a, 136), Ui.dp(a, 44));
+    objectBubble.setLayoutParams(objectLp);
+    objectBubble.setVisibility(GONE);
+    stage.addView(objectBubble);
 
     zoomChip = Ui.icon(a, R.drawable.ic_fit, "适配页面", 40, Ui.INK, () -> {
       ink.resetZoom();
@@ -245,39 +279,49 @@ final class EditorScreen extends FrameLayout {
     pageLabelHolder = pageLabel;
     controls.addView(nav, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+    // The tools scroll; the colour chip and the width control stay pinned on the right so they
+    // are always one tap away on a narrow phone.
+    LinearLayout rail = Ui.row(a);
+    rail.setBackground(Ui.round(a, Ui.SURFACE, 24));
+    rail.setElevation(Ui.dp(a, 6));
+    rail.setPadding(Ui.dp(a, 4), Ui.dp(a, 4), Ui.dp(a, 4), Ui.dp(a, 4));
     HorizontalScrollView scroll = new HorizontalScrollView(a);
     scroll.setHorizontalScrollBarEnabled(false);
-    scroll.setFillViewport(true);
+    scroll.setFillViewport(false);
     LinearLayout tools = Ui.row(a);
-    tools.setBackground(Ui.round(a, Ui.SURFACE, 24));
-    tools.setElevation(Ui.dp(a, 6));
-    tools.setPadding(Ui.dp(a, 4), Ui.dp(a, 4), Ui.dp(a, 4), Ui.dp(a, 4));
     scroll.addView(tools);
+    rail.addView(scroll, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
     penButton = Ui.icon(a, R.drawable.ic_pen, "画笔", 42, Ui.INK, this::onPenButton);
-    markerButton = Ui.icon(a, R.drawable.ic_marker, "荧光笔", 42, Ui.INK, () -> selectTool("marker"));
+    markerButton = Ui.icon(a, R.drawable.ic_marker, "荧光笔", 42, Ui.INK, this::onMarkerButton);
     eraserButton = Ui.icon(a, R.drawable.ic_eraser, "橡皮擦", 42, Ui.INK, this::onEraserButton);
     lassoButton = Ui.icon(a, R.drawable.ic_lasso, "套索", 42, Ui.INK, () -> selectTool("lasso"));
     shapeButton = Ui.icon(a, R.drawable.ic_shapes, "图形", 42, Ui.INK, this::showShapeSheet);
     magicButton = Ui.icon(a, R.drawable.ic_magic, "魔法笔", 42, Ui.INK, this::onMagicButton);
+    textButton = Ui.icon(a, R.drawable.ic_text, "文字", 42, Ui.INK, this::onTextButton);
+    imageButton = Ui.icon(a, R.drawable.ic_image, "图片", 42, Ui.INK, this::onImageButton);
+    roamButton = Ui.icon(a, R.drawable.ic_roam, "漫游", 42, Ui.INK, this::onRoamButton);
     tools.addView(penButton);
     tools.addView(markerButton);
     tools.addView(eraserButton);
     tools.addView(lassoButton);
     tools.addView(shapeButton);
     tools.addView(magicButton);
-    tools.addView(Ui.verticalDivider(a));
+    tools.addView(textButton);
+    tools.addView(imageButton);
+    tools.addView(roamButton);
+    rail.addView(Ui.verticalDivider(a));
     colorButton = new ColorChipButton(a);
     LinearLayout.LayoutParams chipLp = new LinearLayout.LayoutParams(Ui.dp(a, 42), Ui.dp(a, 42));
     colorButton.setLayoutParams(chipLp);
     colorButton.setContentDescription("颜色");
     colorButton.setOnClickListener(v -> showColorSheet());
-    tools.addView(colorButton);
+    rail.addView(colorButton);
     ImageButton widthButton = Ui.icon(a, R.drawable.ic_width, "笔尖粗细", 42, Ui.INK, this::onWidthButton);
-    tools.addView(widthButton);
+    rail.addView(widthButton);
     LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
     slp.topMargin = Ui.dp(a, 8);
-    controls.addView(scroll, slp);
+    controls.addView(rail, slp);
 
     applyToolStyles();
     updatePageLabel();
@@ -312,6 +356,32 @@ final class EditorScreen extends FrameLayout {
   private void onMagicButton() {
     if ("magic".equals(tool)) showMagicSheet();
     else selectTool("magic");
+  }
+
+  private void onMarkerButton() {
+    if ("marker".equals(tool)) showMarkerSheet();
+    else selectTool("marker");
+  }
+
+  private void onTextButton() {
+    if ("text".equals(tool)) showTextComposer(null, -1, -1);
+    else { selectTool("text"); toast("点按页面开始输入文字"); }
+  }
+
+  private void onImageButton() {
+    selectTool("image");
+    host.pickImage();
+  }
+
+  private void onRoamButton() {
+    if ("roam".equals(tool)) {
+      selectTool(prefs.softPen() ? "brush" : "pen");
+      ink.resetZoom();
+      updateZoomChip(1);
+    } else {
+      selectTool("roam");
+      toast("拖动可移动页面，双指缩放；再点一次退出漫游");
+    }
   }
 
   private void onWidthButton() {
@@ -375,6 +445,7 @@ final class EditorScreen extends FrameLayout {
     ink.areaErase(prefs.eraseMode() == 1);
     ink.stylusOnly(prefs.stylusOnly());
     ink.pressureSensitivity(prefs.pressure());
+    ink.markerAlpha(prefs.markerAlpha());
   }
 
   private void go(int next) {
@@ -405,6 +476,9 @@ final class EditorScreen extends FrameLayout {
     Ui.activate(lassoButton, "lasso".equals(tool));
     Ui.activate(shapeButton, "shape".equals(tool));
     Ui.activate(magicButton, "magic".equals(tool));
+    Ui.activate(textButton, "text".equals(tool));
+    Ui.activate(imageButton, "image".equals(tool));
+    Ui.activate(roamButton, "roam".equals(tool));
     if (colorButton != null) colorButton.setColor(color);
   }
 
@@ -466,6 +540,686 @@ final class EditorScreen extends FrameLayout {
   private void updateZoomChip(float zoom) {
     if (zoomChip != null) zoomChip.setVisibility(zoom > 1.02f ? VISIBLE : GONE);
   }
+
+  private void updateObjectBubble(boolean hasObject, boolean isText, RectF rect) {
+    if (objectBubble == null) return;
+    if (!hasObject || rect == null || stage.getWidth() <= 0) {
+      objectBubble.setVisibility(GONE);
+      return;
+    }
+    objectEditButton.setVisibility(isText ? VISIBLE : GONE);
+    int button = Ui.dp(a, 40), pad = Ui.dp(a, 4);
+    int w = button * (isText ? 3 : 2) + pad * 2, h = Ui.dp(a, 44), edge = Ui.dp(a, 8);
+    FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) objectBubble.getLayoutParams();
+    lp.width = w;
+    int x = Math.round(rect.centerX() - w / 2f);
+    int y = Math.round(rect.top - h - Ui.dp(a, 12));
+    x = Math.max(edge, Math.min(x, Math.max(edge, stage.getWidth() - w - edge)));
+    int maxY = Math.max(edge, stage.getHeight() - h - edge);
+    if (y < edge) y = Math.min(maxY, Math.round(rect.bottom + Ui.dp(a, 10)));
+    y = Math.max(edge, Math.min(y, maxY));
+    lp.leftMargin = x;
+    lp.topMargin = y;
+    objectBubble.setLayoutParams(lp);
+    objectBubble.setVisibility(VISIBLE);
+  }
+
+  private void editSelectedText() {
+    PageText value = ink.selectedText();
+    if (value == null) return;
+    showTextComposer(value, value.x, value.y);
+  }
+
+  // ---- typed text -----------------------------------------------------------------------------
+
+  /** Creates or edits one typed block. Coordinates are page units; negative means "ask". */
+  private void showTextComposer(PageText existing, float tapX, float tapY) {
+    final boolean editing = existing != null;
+    final float px = editing ? existing.x : (tapX < 0 ? 72 : tapX);
+    final float py = editing ? existing.y : (tapY < 0 ? 96 : tapY);
+    final float wrapW = editing ? existing.w : 0;
+    final float[] size = {editing ? existing.size : prefs.textSize()};
+    final int[] inkColor = {editing ? existing.argb : color};
+    final String[] font = {editing ? existing.font : prefs.textFont()};
+    final boolean[] bold = {editing && existing.bold};
+    final boolean[] italic = {editing && existing.italic};
+    final boolean[] underline = {editing && existing.underline};
+    final int[] align = {editing ? existing.align : 0};
+
+    LinearLayout content = Ui.column(a);
+    content.setPadding(Ui.dp(a, 20), 0, Ui.dp(a, 20), Ui.dp(a, 22));
+    Dialog[] ref = new Dialog[1];
+    content.addView(Ui.sheetHeader(a, editing ? "编辑文字" : "插入文字", () -> ref[0].dismiss()));
+
+    EditText box = new EditText(a);
+    box.setText(editing ? existing.text : "");
+    box.setHint(Str.of("在这里输入文字"));
+    box.setHintTextColor(Ui.HINT);
+    box.setTextColor(Ui.INK);
+    box.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(13f, Math.min(26f, size[0] * .8f)));
+    box.setTypeface(PageText.typeface(font[0], bold[0], italic[0]));
+    box.setGravity(Gravity.TOP);
+    box.setMinLines(3);
+    box.setMaxLines(10);
+    box.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+    box.setFilters(new InputFilter[] {new InputFilter.LengthFilter(20000)});
+    box.setBackground(Ui.round(a, Ui.SURFACE_SOFT, 14));
+    box.setPadding(Ui.dp(a, 14), Ui.dp(a, 12), Ui.dp(a, 14), Ui.dp(a, 12));
+    LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    blp.topMargin = Ui.dp(a, 8);
+    content.addView(box, blp);
+
+    // Font family.
+    LinearLayout fonts = Ui.row(a);
+    LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    flp.topMargin = Ui.dp(a, 10);
+    content.addView(fonts, flp);
+    final LinearLayout[] fontTiles = new LinearLayout[PageText.FONTS.length];
+    for (int i = 0; i < PageText.FONTS.length; i++) {
+      final int index = i;
+      TextView sample = Ui.text(a, "Aa 永", 15, Ui.INK);
+      sample.setGravity(Gravity.CENTER);
+      sample.setTypeface(PageText.typeface(PageText.FONTS[i], false, false));
+      sample.setPadding(0, Ui.dp(a, 6), 0, Ui.dp(a, 6));
+      LinearLayout tile = Ui.choiceTile(a, sample, PageText.FONT_NAMES[i], null);
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+      if (i > 0) lp.leftMargin = Ui.dp(a, 6);
+      tile.setLayoutParams(lp);
+      tile.setOnClickListener(v -> {
+        font[0] = PageText.FONTS[index];
+        for (int j = 0; j < fontTiles.length; j++) Ui.setChosen(fontTiles[j], j == index);
+        box.setTypeface(PageText.typeface(font[0], bold[0], italic[0]));
+      });
+      fontTiles[i] = tile;
+      fonts.addView(tile);
+    }
+    for (int i = 0; i < fontTiles.length; i++)
+      Ui.setChosen(fontTiles[i], PageText.FONTS[i].equals(font[0]));
+
+    // Size, emphasis and alignment.
+    TextView sizeLabel = Ui.text(a, "", 12, Ui.MUTED);
+    sizeLabel.setPadding(0, Ui.dp(a, 12), 0, Ui.dp(a, 2));
+    content.addView(sizeLabel);
+    SeekBar sizeBar = new SeekBar(a);
+    sizeBar.setMax(1000);
+    sizeBar.setProgressDrawable(Ui.sliderTrack(a, Ui.LINE, Ui.INK));
+    sizeBar.setSplitTrack(false);
+    sizeBar.setThumbTintList(android.content.res.ColorStateList.valueOf(Ui.ACCENT));
+    content.addView(sizeBar);
+
+    LinearLayout styleRow = Ui.row(a);
+    styleRow.setPadding(0, Ui.dp(a, 8), 0, 0);
+    content.addView(styleRow);
+    final TextView boldButton = styleChip("B", Typeface.BOLD);
+    final TextView italicButton = styleChip("I", Typeface.ITALIC);
+    final TextView underlineButton = styleChip("U", Typeface.NORMAL);
+    underlineButton.setPaintFlags(underlineButton.getPaintFlags() | Paint.UNDERLINE_TEXT_FLAG);
+    addSpaced(styleRow, boldButton);
+    addSpaced(styleRow, italicButton);
+    addSpaced(styleRow, underlineButton);
+    final ImageButton[] alignButtons = new ImageButton[3];
+    int[] alignIcons = {R.drawable.ic_align_left, R.drawable.ic_align_center, R.drawable.ic_align_right};
+    for (int i = 0; i < 3; i++) {
+      final int value = i;
+      ImageButton b = Ui.icon(a, alignIcons[i], i == 0 ? "左对齐" : i == 1 ? "居中" : "右对齐",
+          40, Ui.INK, null);
+      b.setOnClickListener(v -> {
+        align[0] = value;
+        for (int j = 0; j < alignButtons.length; j++) Ui.activate(alignButtons[j], j == value);
+        box.setGravity((value == 1 ? Gravity.CENTER_HORIZONTAL : value == 2 ? Gravity.END : Gravity.START) | Gravity.TOP);
+      });
+      alignButtons[i] = b;
+      addSpaced(styleRow, b);
+    }
+    for (int i = 0; i < 3; i++) Ui.activate(alignButtons[i], i == align[0]);
+    boldButton.setOnClickListener(v -> {
+      bold[0] = !bold[0]; syncStyle(boldButton, bold[0]); box.setTypeface(PageText.typeface(font[0], bold[0], italic[0]));
+    });
+    italicButton.setOnClickListener(v -> {
+      italic[0] = !italic[0]; syncStyle(italicButton, italic[0]); box.setTypeface(PageText.typeface(font[0], bold[0], italic[0]));
+    });
+    underlineButton.setOnClickListener(v -> {
+      underline[0] = !underline[0]; syncStyle(underlineButton, underline[0]);
+      box.setPaintFlags(underline[0] ? box.getPaintFlags() | Paint.UNDERLINE_TEXT_FLAG
+          : box.getPaintFlags() & ~Paint.UNDERLINE_TEXT_FLAG);
+    });
+    syncStyle(boldButton, bold[0]);
+    syncStyle(italicButton, italic[0]);
+    syncStyle(underlineButton, underline[0]);
+
+    // Colour swatches. The composer always draws its own text in the theme ink so it stays
+    // readable on the sheet; the swatch beside the row shows the colour the block will keep.
+    LinearLayout colours = Ui.row(a);
+    colours.setPadding(0, Ui.dp(a, 12), 0, 0);
+    content.addView(colours);
+    final Ui.ColorChip current = new Ui.ColorChip(a);
+    LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(Ui.dp(a, 28), Ui.dp(a, 28));
+    clp.leftMargin = Ui.dp(a, 10);
+    current.setLayoutParams(clp);
+    current.setColor(inkColor[0]);
+    current.setContentDescription(Str.of("当前颜色"));
+    current.setOnClickListener(v -> {
+      inkColor[0] = color;
+      current.setColor(color);
+    });
+    int[] slots = prefs.slots();
+    for (int i = 0; i < slots.length; i++) {
+      final int value = slots[i];
+      Ui.ColorChip chip = new Ui.ColorChip(a);
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Ui.dp(a, 28), Ui.dp(a, 28));
+      if (i > 0) lp.leftMargin = Ui.dp(a, 6);
+      chip.setLayoutParams(lp);
+      chip.setColor(value);
+      chip.setContentDescription(Str.slot(i + 1));
+      chip.setOnClickListener(v -> {
+        inkColor[0] = value;
+        current.setColor(value);
+      });
+      colours.addView(chip);
+    }
+    colours.addView(current);
+
+    // Tools that act on the draft.
+    LinearLayout tools = Ui.row(a);
+    LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    tlp.topMargin = Ui.dp(a, 12);
+    content.addView(tools, tlp);
+    addSpaced(tools, Ui.pillButton(a, R.drawable.ic_scan, "识别", Ui.SURFACE_SOFT, Ui.INK,
+        () -> recognizePageInto(box)));
+    addSpaced(tools, Ui.pillButton(a, R.drawable.ic_formula, "公式", Ui.SURFACE_SOFT, Ui.INK, () -> {
+      String converted = MathText.toUnicode(box.getText().toString());
+      box.setText(converted);
+      box.setSelection(converted.length());
+      toast("已转换为公式文本");
+    }));
+    addSpaced(tools, Ui.pillButton(a, R.drawable.ic_translate, "翻译", Ui.SURFACE_SOFT, Ui.INK,
+        () -> translate(box.getText().toString())));
+
+    TextView note = Ui.text(a,
+        "识别在本机完成；翻译会交给手机上已安装的其他应用，本应用不联网。公式把 LaTeX 片段转成 Unicode 数学文本。",
+        10.5f, Ui.MUTED);
+    note.setPadding(0, Ui.dp(a, 8), 0, 0);
+    note.setLineSpacing(Ui.dp(a, 2), 1f);
+    content.addView(note);
+
+    float minSize = 10, maxSize = 100;
+    sizeBar.setProgress(Math.round((size[0] - minSize) / (maxSize - minSize) * 1000));
+    sizeLabel.setText(Str.textSize(trim(size[0])));
+    sizeBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+      @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+        size[0] = minSize + (maxSize - minSize) * progress / 1000f;
+        sizeLabel.setText(Str.textSize(trim(size[0])));
+        box.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(13f, Math.min(26f, size[0] * .8f)));
+      }
+      @Override public void onStartTrackingTouch(SeekBar bar) { }
+      @Override public void onStopTrackingTouch(SeekBar bar) { }
+    });
+
+    LinearLayout footer = Ui.row(a);
+    footer.setGravity(Gravity.END);
+    LinearLayout.LayoutParams fp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    fp.topMargin = Ui.dp(a, 16);
+    footer.addView(Ui.pillButton(a, 0, "取消", Ui.SURFACE_SOFT, Ui.INK, () -> ref[0].dismiss()));
+    View save = Ui.pillButton(a, R.drawable.ic_check, "保存", Ui.INK, Ui.ON_INK, () -> {
+      String value = box.getText().toString();
+      if (value.trim().isEmpty()) { box.setError(Str.of("文字不能为空")); return; }
+      PageText block = PageText.of(px, py, value, size[0], inkColor[0], font[0],
+          bold[0], italic[0], underline[0], align[0], wrapW);
+      if (editing) ink.replaceSelectedText(block); else ink.addText(block);
+      prefs.setTextSize(size[0]);
+      prefs.setTextFont(font[0]);
+      changed();
+      updateHistory();
+      ref[0].dismiss();
+    });
+    LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    slp.leftMargin = Ui.dp(a, 10);
+    footer.addView(save, slp);
+    content.addView(footer, fp);
+
+    Dialog d = Ui.sheet(a, content, true);
+    ref[0] = d;
+    d.show();
+  }
+
+  /** Adds a view keeping the size it asked for, with the row's standard gap before it. */
+  private void addSpaced(LinearLayout row, View view) {
+    ViewGroup.LayoutParams base = view.getLayoutParams();
+    int width = base == null ? ViewGroup.LayoutParams.WRAP_CONTENT : base.width;
+    int height = base == null ? ViewGroup.LayoutParams.WRAP_CONTENT : base.height;
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(width, height);
+    lp.leftMargin = Ui.dp(a, 10);
+    row.addView(view, lp);
+  }
+
+  private TextView styleChip(String label, int typefaceStyle) {
+    TextView b = Ui.text(a, label, 17, Ui.INK);
+    b.setTypeface(PageText.typeface("sans", typefaceStyle == Typeface.BOLD, typefaceStyle == Typeface.ITALIC));
+    b.setGravity(Gravity.CENTER);
+    b.setLayoutParams(new LinearLayout.LayoutParams(Ui.dp(a, 44), Ui.dp(a, 44)));
+    b.setMinWidth(Ui.dp(a, 44));
+    b.setMinHeight(Ui.dp(a, 44));
+    b.setBackground(Ui.ripple(new GradientDrawable(), 12, a));
+    b.setClickable(true);
+    b.setFocusable(true);
+    return b;
+  }
+
+  private void syncStyle(TextView button, boolean on) {
+    button.setTextColor(on ? Ui.ON_INK : Ui.INK);
+    button.setBackground(Ui.ripple(on ? Ui.INK : Ui.SURFACE_SOFT, 12, a));
+    button.setSelected(on);
+  }
+
+  /** Runs the page OCR pass and drops the result into the composer. */
+  private void recognizePageInto(final EditText box) {
+    final JSONObject target = page();
+    if (target == null) return;
+    final String snapshot = target.toString();
+    toast("正在识别本页…");
+    worker.execute(() -> {
+      try {
+        int w = target.getInt("w"), h = target.getInt("h");
+        float scale = 1800f / Math.max(w, h);
+        Bitmap image = Bitmap.createBitmap(Math.max(1, Math.round(w * scale)),
+            Math.max(1, Math.round(h * scale)), Bitmap.Config.ARGB_8888);
+        String recognized;
+        try {
+          Canvas canvas = new Canvas(image);
+          canvas.scale((float) image.getWidth() / w, (float) image.getHeight() / h);
+          InkView.drawPage(canvas, new JSONObject(snapshot), background, store, id);
+          recognized = OfflineOcr.recognize(a.getApplicationContext(), image);
+        } finally {
+          image.recycle();
+        }
+        final String result = recognized == null ? "" : recognized.trim();
+        ui.post(() -> {
+          if (result.isEmpty()) { toast("未识别到印刷文字"); return; }
+          box.setText(result);
+          box.setSelection(result.length());
+        });
+      } catch (final Exception e) {
+        ui.post(() -> showError("识别未完成", e));
+      }
+    });
+  }
+
+  /** Hands the text to another installed app; this app itself never opens a socket. */
+  private void translate(String text) {
+    String value = text == null ? "" : text.trim();
+    if (value.isEmpty()) { toast("先输入需要翻译的文字"); return; }
+    Intent send = new Intent(Intent.ACTION_SEND);
+    send.setType("text/plain");
+    send.putExtra(Intent.EXTRA_TEXT, value);
+    try {
+      a.startActivity(Intent.createChooser(send, Str.of("翻译")));
+    } catch (android.content.ActivityNotFoundException e) {
+      toast("没有可用的应用");
+    }
+  }
+
+  // ---- highlighter sheet ----------------------------------------------------------------------
+
+  private void showMarkerSheet() {
+    LinearLayout content = Ui.column(a);
+    content.setPadding(Ui.dp(a, 20), 0, Ui.dp(a, 20), Ui.dp(a, 24));
+    Dialog[] ref = new Dialog[1];
+    content.addView(Ui.sheetHeader(a, "荧光笔", () -> ref[0].dismiss()));
+
+    StrokePreviewView preview = new StrokePreviewView(a);
+    LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(a, 92));
+    plp.topMargin = Ui.dp(a, 10);
+    content.addView(preview, plp);
+
+    TextView value = Ui.text(a, "", 12, Ui.MUTED);
+    value.setGravity(Gravity.CENTER);
+    value.setPadding(0, Ui.dp(a, 8), 0, Ui.dp(a, 2));
+    content.addView(value);
+
+    final float[] width = {prefs.width("marker")};
+    final float[] alpha = {prefs.markerAlpha()};
+    SeekBar widthBar = new SeekBar(a);
+    widthBar.setMax(1000);
+    widthBar.setProgressDrawable(Ui.sliderTrack(a, Ui.LINE, Ui.INK));
+    widthBar.setSplitTrack(false);
+    widthBar.setThumbTintList(android.content.res.ColorStateList.valueOf(Ui.ACCENT));
+    LinearLayout.LayoutParams wlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    wlp.topMargin = Ui.dp(a, 4);
+    content.addView(widthBar, wlp);
+
+    SeekBar alphaBar = new SeekBar(a);
+    alphaBar.setMax(1000);
+    alphaBar.setProgressDrawable(Ui.sliderTrack(a, Ui.LINE, Ui.INK));
+    alphaBar.setSplitTrack(false);
+    alphaBar.setThumbTintList(android.content.res.ColorStateList.valueOf(Ui.ACCENT));
+    content.addView(alphaBar);
+
+    final Runnable sync = () -> {
+      preview.setStroke(color, width[0], "marker");
+      preview.setMarkerAlpha(alpha[0]);
+      value.setText(Str.marker(trim(width[0]), Math.round(alpha[0] * 100)));
+    };
+    widthBar.setProgress(Math.round((width[0] - 4) / 44f * 1000));
+    alphaBar.setProgress(Math.round((alpha[0] - .15f) / .85f * 1000));
+    sync.run();
+    widthBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+      @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+        width[0] = 4 + 44f * progress / 1000f;
+        prefs.setWidth("marker", width[0]);
+        if (ink != null) ink.width(width[0]);
+        sync.run();
+      }
+      @Override public void onStartTrackingTouch(SeekBar bar) { }
+      @Override public void onStopTrackingTouch(SeekBar bar) { }
+    });
+    alphaBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+      @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+        alpha[0] = .15f + .85f * progress / 1000f;
+        prefs.setMarkerAlpha(alpha[0]);
+        if (ink != null) ink.markerAlpha(alpha[0]);
+        sync.run();
+      }
+      @Override public void onStartTrackingTouch(SeekBar bar) { }
+      @Override public void onStopTrackingTouch(SeekBar bar) { }
+    });
+
+    Dialog d = Ui.sheet(a, content, true);
+    ref[0] = d;
+    d.show();
+  }
+
+  // ---- page style -----------------------------------------------------------------------------
+
+  private void showPageStyleSheet() {
+    final JSONObject target = page();
+    if (target == null) return;
+    LinearLayout content = Ui.column(a);
+    content.setPadding(Ui.dp(a, 20), 0, Ui.dp(a, 20), Ui.dp(a, 22));
+    Dialog[] ref = new Dialog[1];
+    content.addView(Ui.sheetHeader(a, "页面样式", () -> ref[0].dismiss()));
+
+    final int[] tint = {target.has("tint") ? target.optInt("tint", Ui.PAPER) : Ui.PAPER};
+    final String[] pattern = {target.optString("paper", "plain")};
+
+    LibraryScreen.TemplatePreview preview = new LibraryScreen.TemplatePreview(a, pattern[0]);
+    preview.setTint(tint[0]);
+    LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(Ui.dp(a, 96), Ui.dp(a, 124));
+    plp.gravity = Gravity.CENTER_HORIZONTAL;
+    plp.topMargin = Ui.dp(a, 8);
+    content.addView(preview, plp);
+
+    content.addView(Ui.sectionLabel(a, "纸张样式"));
+    int[] icons = {R.drawable.ic_line, R.drawable.ic_rect, R.drawable.ic_dot_grid,
+        R.drawable.ic_blank_page, R.drawable.ic_cornell};
+    LinearLayout patterns = Ui.row(a);
+    final View[] tiles = new View[InkPaper.PATTERNS.length];
+    for (int i = 0; i < InkPaper.PATTERNS.length; i++) {
+      final String key = InkPaper.PATTERNS[i];
+      View tile = Ui.iconTile(a, icons[i], InkPaper.PATTERN_NAMES[i], false, () -> {
+        pattern[0] = key;
+        try { target.put("paper", key); } catch (JSONException ignored) { }
+        preview.setPaper(key);
+        for (int j = 0; j < tiles.length; j++) markTile(tiles[j], InkPaper.PATTERNS[j].equals(key));
+        changed();
+        ink.invalidate();
+      });
+      tiles[i] = tile;
+      markTile(tile, key.equals(pattern[0]));
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+      if (i > 0) lp.leftMargin = Ui.dp(a, 2);
+      patterns.addView(tile, lp);
+    }
+    content.addView(patterns);
+
+    content.addView(Ui.sectionLabel(a, "纸张颜色"));
+    LinearLayout tints = Ui.row(a);
+    tints.setGravity(Gravity.CENTER);
+    final Ui.ColorChip[] chips = new Ui.ColorChip[InkPaper.TINTS.length];
+    for (int i = 0; i < InkPaper.TINTS.length; i++) {
+      final int value = InkPaper.TINTS[i];
+      Ui.ColorChip chip = new Ui.ColorChip(a);
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Ui.dp(a, 40), Ui.dp(a, 40));
+      if (i > 0) lp.leftMargin = Ui.dp(a, 8);
+      chip.setLayoutParams(lp);
+      chip.setColor(value);
+      chip.setSelectedChip(value == tint[0]);
+      chip.setContentDescription(Str.of("纸张颜色"));
+      chip.setOnClickListener(v -> {
+        tint[0] = value;
+        try { target.put("tint", value); } catch (JSONException ignored) { }
+        for (Ui.ColorChip c : chips) c.setSelectedChip(false);
+        chip.setSelectedChip(true);
+        preview.setTint(value);
+        changed();
+        ink.invalidate();
+      });
+      chips[i] = chip;
+      tints.addView(chip);
+    }
+    content.addView(tints);
+
+    Dialog d = Ui.sheet(a, content, true);
+    ref[0] = d;
+    d.show();
+  }
+
+  private void markTile(View tile, boolean on) {
+    tile.setBackground(Ui.ripple(on ? Ui.ACCENT_SOFT : Ui.SURFACE_SOFT, 16, a));
+    tile.setSelected(on);
+  }
+
+  // ---- notebook cover -------------------------------------------------------------------------
+
+  private void showCoverSheet() {
+    LinearLayout content = Ui.column(a);
+    content.setPadding(Ui.dp(a, 20), 0, Ui.dp(a, 20), Ui.dp(a, 22));
+    Dialog[] ref = new Dialog[1];
+    content.addView(Ui.sheetHeader(a, "封面", () -> ref[0].dismiss()));
+
+    JSONObject cover = doc.optJSONObject("cover");
+    final String[] style = {cover == null ? prefs.coverStyle() : cover.optString("style", prefs.coverStyle())};
+    final int[] coverColor = {cover == null ? prefs.coverColor() : cover.optInt("color", prefs.coverColor())};
+
+    CoverArt preview = new CoverArt(a);
+    preview.setCover(style[0], coverColor[0]);
+    preview.setTitle(doc.optString("title"));
+    LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(Ui.dp(a, 104), Ui.dp(a, 138));
+    plp.gravity = Gravity.CENTER_HORIZONTAL;
+    plp.topMargin = Ui.dp(a, 8);
+    content.addView(preview, plp);
+
+    content.addView(Ui.sectionLabel(a, "封面样式"));
+    LinearLayout styles = Ui.row(a);
+    final LinearLayout[] styleTiles = new LinearLayout[CoverArt.STYLES.length];
+    for (int i = 0; i < CoverArt.STYLES.length; i++) {
+      final String key = CoverArt.STYLES[i];
+      LinearLayout cell = Ui.column(a);
+      cell.setGravity(Gravity.CENTER);
+      CoverArt sample = new CoverArt(a);
+      sample.setCover(key, coverColor[0]);
+      LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(a, 70));
+      cell.addView(sample, slp);
+      LinearLayout tile = Ui.choiceTile(a, cell, CoverArt.STYLE_NAMES[i], null);
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+      if (i > 0) lp.leftMargin = Ui.dp(a, 6);
+      tile.setLayoutParams(lp);
+      final int index = i;
+      tile.setOnClickListener(v -> {
+        style[0] = key;
+        for (int j = 0; j < styleTiles.length; j++) Ui.setChosen(styleTiles[j], j == index);
+        preview.setCover(key, coverColor[0]);
+        applyCover(style[0], coverColor[0]);
+      });
+      styleTiles[i] = tile;
+      styles.addView(tile);
+    }
+    for (int i = 0; i < styleTiles.length; i++)
+      Ui.setChosen(styleTiles[i], CoverArt.STYLES[i].equals(style[0]));
+    content.addView(styles);
+
+    content.addView(Ui.sectionLabel(a, "封面颜色"));
+    LinearLayout colors = Ui.row(a);
+    colors.setGravity(Gravity.CENTER);
+    final Ui.ColorChip[] chips = new Ui.ColorChip[CoverArt.PALETTE.length];
+    for (int i = 0; i < CoverArt.PALETTE.length; i++) {
+      final int value = CoverArt.PALETTE[i];
+      Ui.ColorChip chip = new Ui.ColorChip(a);
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Ui.dp(a, 32), Ui.dp(a, 32));
+      if (i > 0) lp.leftMargin = Ui.dp(a, 6);
+      chip.setLayoutParams(lp);
+      chip.setColor(value);
+      chip.setSelectedChip(value == coverColor[0]);
+      chip.setContentDescription(Str.of("封面颜色"));
+      chip.setOnClickListener(v -> {
+        coverColor[0] = value;
+        for (Ui.ColorChip c : chips) c.setSelectedChip(false);
+        chip.setSelectedChip(true);
+        preview.setCover(style[0], value);
+        applyCover(style[0], value);
+      });
+      chips[i] = chip;
+      colors.addView(chip);
+    }
+    content.addView(colors);
+
+    Dialog d = Ui.sheet(a, content, true);
+    ref[0] = d;
+    d.show();
+  }
+
+  private void applyCover(String style, int coverColor) {
+    try {
+      doc.put("cover", new JSONObject().put("style", style).put("color", coverColor));
+    } catch (JSONException ignored) { }
+    prefs.setCoverStyle(style);
+    prefs.setCoverColor(coverColor);
+    changed();
+  }
+
+  // ---- inserted pictures ----------------------------------------------------------------------
+
+  /** Called by the host once the picker returns, on the UI thread. */
+  void insertImage(final Uri uri) {
+    loadingOverlay.setVisibility(VISIBLE);
+    ink.setEnabled(false);
+    worker.execute(() -> {
+      Bitmap bitmap = null;
+      try {
+        bitmap = decodeImage(uri);
+        final int width = bitmap.getWidth(), height = bitmap.getHeight();
+        final String path = store.addImage(id, bitmap);
+        ui.post(() -> {
+          loadingOverlay.setVisibility(GONE);
+          ink.setEnabled(true);
+          if (page() == null || path == null) return;
+          int w = page().optInt("w", 612), h = page().optInt("h", 792);
+          float iw = Math.max(1, width), ih = Math.max(1, height);
+          float scale = Math.min(w * .62f / iw, h * .62f / ih);
+          iw *= scale;
+          ih *= scale;
+          ink.addImage(PageImage.of((w - iw) * .5f, (h - ih) * .5f, iw, ih, path));
+          changed();
+          updateHistory();
+        });
+      } catch (final Exception e) {
+        ui.post(() -> {
+          loadingOverlay.setVisibility(GONE);
+          ink.setEnabled(true);
+          showError("无法插入图片", e);
+        });
+      } finally {
+        if (bitmap != null) bitmap.recycle();
+      }
+    });
+  }
+
+  // ---- sharing ------------------------------------------------------------------------------
+
+  /** Renders or packs the requested export into the share folder and opens the system chooser. */
+  private void shareFile(final String kind) {
+    loadingOverlay.setVisibility(VISIBLE);
+    ink.setEnabled(false);
+    final JSONObject snap = snapshot();
+    final String title = doc.optString("title", Str.of("笔记"));
+    worker.execute(() -> {
+      try {
+        File dir = ShareProvider.folder(a);
+        File[] old = dir.listFiles();
+        if (old != null) for (File file : old) if (file.isFile()) file.delete();
+        final File target;
+        final String mime;
+        if ("pdf".equals(kind)) {
+          target = Share.file(a, Share.stem(title) + ".pdf");
+          try (java.io.OutputStream out = new java.io.FileOutputStream(target)) {
+            store.exportPdf(id, snap, out);
+          }
+          mime = Share.PDF;
+        } else if ("png".equals(kind)) {
+          target = Share.file(a, Share.stem(title) + "-" + (index + 1) + ".png");
+          writePagePng(target, snap);
+          mime = Share.PNG;
+        } else {
+          target = Share.file(a, Share.stem(title) + ".phnote");
+          try (java.io.OutputStream out = new java.io.FileOutputStream(target)) {
+            store.backup(id, snap, out);
+          }
+          mime = Share.PHNOTE;
+        }
+        ui.post(() -> {
+          loadingOverlay.setVisibility(GONE);
+          ink.setEnabled(true);
+          Share.send(a, target, mime, title);
+        });
+      } catch (final Exception e) {
+        ui.post(() -> {
+          loadingOverlay.setVisibility(GONE);
+          ink.setEnabled(true);
+          showError("分享失败", e);
+        });
+      }
+    });
+  }
+
+  /** Renders one page of the snapshot to a PNG file at twice its page size. */
+  private void writePagePng(File file, JSONObject snapshot) throws Exception {
+    JSONArray pages = snapshot.getJSONArray("pages");
+    JSONObject target = pages.getJSONObject(Math.max(0, Math.min(index, pages.length() - 1)));
+    int w = Math.max(1, target.optInt("w", 612)), h = Math.max(1, target.optInt("h", 792));
+    Bitmap background = target.optInt("pdf", -1) >= 0 ? store.background(id, target, 2400) : null;
+    Bitmap image = Bitmap.createBitmap(w * 2, h * 2, Bitmap.Config.ARGB_8888);
+    try {
+      Canvas canvas = new Canvas(image);
+      canvas.scale(2f, 2f);
+      InkView.drawPage(canvas, target, background, store, id);
+      try (java.io.FileOutputStream out = new java.io.FileOutputStream(file)) {
+        if (!image.compress(Bitmap.CompressFormat.PNG, 100, out))
+          throw new java.io.IOException("无法编码 PNG");
+      }
+    } finally {
+      image.recycle();
+      if (background != null) background.recycle();
+    }
+  }
+
+  private Bitmap decodeImage(Uri uri) throws Exception {
+    BitmapFactory.Options bounds = new BitmapFactory.Options();
+    bounds.inJustDecodeBounds = true;
+    try (InputStream in = a.getContentResolver().openInputStream(uri)) {
+      if (in == null) throw new java.io.IOException("无法打开图片");
+      BitmapFactory.decodeStream(in, null, bounds);
+    }
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw new java.io.IOException("无法识别图片格式");
+    int sample = 1;
+    while (Math.max(bounds.outWidth, bounds.outHeight) / sample > 1600) sample *= 2;
+    BitmapFactory.Options options = new BitmapFactory.Options();
+    options.inSampleSize = sample;
+    try (InputStream in = a.getContentResolver().openInputStream(uri)) {
+      Bitmap bitmap = in == null ? null : BitmapFactory.decodeStream(in, null, options);
+      if (bitmap == null) throw new java.io.IOException("图片解码失败");
+      return bitmap;
+    }
+  }
+
 
   // ---- saving ---------------------------------------------------------------------------------
 
@@ -1145,32 +1899,37 @@ final class EditorScreen extends FrameLayout {
     content.setPadding(Ui.dp(a, 20), 0, Ui.dp(a, 20), Ui.dp(a, 22));
     Dialog[] ref = new Dialog[1];
     content.addView(Ui.sheetHeader(a, "添加页面", () -> ref[0].dismiss()));
-    String[] papers = {"ruled", "grid", "plain"};
-    String[] names = {"横线", "方格", "空白"};
+    String[] papers = InkPaper.PATTERNS;
+    String[] names = InkPaper.PATTERN_NAMES;
     LinearLayout row = Ui.row(a);
     LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
     rlp.topMargin = Ui.dp(a, 10);
     content.addView(row, rlp);
+    int tint = page() != null && page().has("tint") ? page().optInt("tint", Ui.PAPER) : prefs.paperTint();
     for (int i = 0; i < papers.length; i++) {
       final String paper = papers[i];
       LinearLayout cell = Ui.column(a);
       cell.setGravity(Gravity.CENTER);
       LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-      if (i > 0) clp.leftMargin = Ui.dp(a, 10);
+      if (i > 0) clp.leftMargin = Ui.dp(a, 6);
       cell.setLayoutParams(clp);
       LibraryScreen.TemplatePreview preview = new LibraryScreen.TemplatePreview(a, paper);
-      preview.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(a, 96)));
+      preview.setTint(tint);
+      preview.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(a, 92)));
       preview.setOnClickListener(v -> {
         ref[0].dismiss();
         addPage(paper);
       });
       cell.addView(preview);
-      TextView name = Ui.text(a, names[i], 11.5f, Ui.MUTED);
+      TextView name = Ui.text(a, names[i], 10.5f, Ui.MUTED);
       name.setGravity(Gravity.CENTER);
       name.setPadding(0, Ui.dp(a, 6), 0, 0);
       cell.addView(name);
       row.addView(cell);
     }
+    TextView hint = Ui.text(a, "纸张颜色可在「更多 · 页面样式」里调整", 10.5f, Ui.MUTED);
+    hint.setPadding(0, Ui.dp(a, 10), 0, 0);
+    content.addView(hint);
     Dialog d = Ui.sheet(a, content, true);
     ref[0] = d;
     d.show();
@@ -1180,7 +1939,8 @@ final class EditorScreen extends FrameLayout {
     try {
       JSONArray pages = doc.getJSONArray("pages");
       if (pages.length() >= 256) { toast("每本最多 256 页"); return; }
-      JSONObject p = Store.page(612, 792, paper, -1);
+      JSONObject p = Store.page(612, 792, paper, -1,
+          page() != null && page().has("tint") ? page().optInt("tint", Ui.PAPER) : prefs.paperTint());
       JSONArray next = new JSONArray();
       for (int i = 0; i < pages.length(); i++) {
         next.put(pages.get(i));
@@ -1220,7 +1980,7 @@ final class EditorScreen extends FrameLayout {
       deletePage(target);
     }), new LinearLayout.LayoutParams(lp));
     content.addView(rows);
-    Dialog d = Ui.sheet(a, content, false);
+    Dialog d = Ui.sheet(a, content, true);
     ref[0] = d;
     d.show();
   }
@@ -1363,8 +2123,13 @@ final class EditorScreen extends FrameLayout {
     }
     @Override protected void onMeasure(int widthSpec, int heightSpec) {
       int width = MeasureSpec.getSize(widthSpec);
+      if (MeasureSpec.getMode(widthSpec) == MeasureSpec.UNSPECIFIED || width <= 0) {
+        // A child with no intrinsic size (a drawn cover) would otherwise collapse to zero width.
+        width = Math.max(1, getResources().getDisplayMetrics().widthPixels / 3);
+      }
       int height = Math.round(width / ratio);
-      super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
+      super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+          MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
     }
   }
 
@@ -1388,17 +2153,25 @@ final class EditorScreen extends FrameLayout {
     LinearLayout row1 = Ui.row(a);
     LinearLayout row2 = Ui.row(a);
     LinearLayout row3 = Ui.row(a);
+    LinearLayout row4 = Ui.row(a);
+    LinearLayout row5 = Ui.row(a);
     LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
     rlp.topMargin = Ui.dp(a, 10);
     content.addView(row1, rlp);
     content.addView(row2, new LinearLayout.LayoutParams(rlp));
     content.addView(row3, new LinearLayout.LayoutParams(rlp));
+    content.addView(row4, new LinearLayout.LayoutParams(rlp));
+    content.addView(row5, new LinearLayout.LayoutParams(rlp));
     String[] labels = {"页内文字", "识别文字", "闪卡", "录音",
         "导出 PDF", "导出图片", "备份", "重命名",
-        "删除", "全选笔迹", "页面排序", "书签页"};
+        "删除", "全选笔迹", "页面排序", "书签页",
+        "页面样式", "封面", "插入图片", "插入文字",
+        "分享备份", "分享 PDF", "分享图片", "导出 DOCX"};
     int[] icons = {R.drawable.ic_text, R.drawable.ic_scan, R.drawable.ic_cards, R.drawable.ic_mic,
         R.drawable.ic_export, R.drawable.ic_image, R.drawable.ic_backup, R.drawable.ic_rename,
-        R.drawable.ic_trash, R.drawable.ic_lasso, R.drawable.ic_pages, R.drawable.ic_bookmark_on};
+        R.drawable.ic_trash, R.drawable.ic_lasso, R.drawable.ic_pages, R.drawable.ic_bookmark_on,
+        R.drawable.ic_page_style, R.drawable.ic_cover, R.drawable.ic_image, R.drawable.ic_text,
+        R.drawable.ic_backup, R.drawable.ic_pdf, R.drawable.ic_image, R.drawable.ic_word};
     Runnable[] actions = {
         () -> { ref[0].dismiss(); showTextSheet(); },
         () -> { ref[0].dismiss(); showOcrSheet(); },
@@ -1411,14 +2184,23 @@ final class EditorScreen extends FrameLayout {
         () -> { ref[0].dismiss(); confirmDeleteNote(); },
         () -> { ref[0].dismiss(); selectTool("lasso"); ink.selectAll(); changed(); updateHistory(); },
         () -> { ref[0].dismiss(); showPagesSheet(); },
-        () -> { ref[0].dismiss(); go(nextBookmark()); }
+        () -> { ref[0].dismiss(); go(nextBookmark()); },
+        () -> { ref[0].dismiss(); showPageStyleSheet(); },
+        () -> { ref[0].dismiss(); showCoverSheet(); },
+        () -> { ref[0].dismiss(); host.pickImage(); },
+        () -> { ref[0].dismiss(); selectTool("text"); showTextComposer(null, -1, -1); },
+        () -> { ref[0].dismiss(); shareFile("phnote"); },
+        () -> { ref[0].dismiss(); shareFile("pdf"); },
+        () -> { ref[0].dismiss(); shareFile("png"); },
+        () -> { ref[0].dismiss(); host.exportDocx(id, snapshot()); }
     };
+    LinearLayout[] rows = {row1, row2, row3, row4, row5};
     for (int i = 0; i < labels.length; i++) {
       boolean danger = labels[i].equals("删除");
       View tile = Ui.iconTile(a, icons[i], labels[i], danger, actions[i]);
       LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
       if (i % 4 != 0) lp.leftMargin = Ui.dp(a, 6);
-      (i < 4 ? row1 : i < 8 ? row2 : row3).addView(tile, lp);
+      rows[i / 4].addView(tile, lp);
     }
     Dialog d = Ui.sheet(a, content, true);
     ref[0] = d;

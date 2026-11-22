@@ -86,7 +86,7 @@ public final class Thumbnails {
             // Non-uniform by at most half a pixel: maps the page rectangle exactly onto the
             // rounded bitmap so no transparent edge remains.
             canvas.scale(bw / (float) w, bh / (float) h);
-            InkView.drawPage(canvas, page, background);
+            InkView.drawPage(canvas, page, background, store, id);
             complete = true;
         } finally {
             if (background != null) background.recycle();

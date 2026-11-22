@@ -18,8 +18,9 @@ import java.util.regex.Pattern;
 
 /** The editable format. Known fields have contracts; unknown JSON values round-trip. */
 final class StoreJson {
-    static final int BYTES = 8 * 1024 * 1024, PAGES = 256, EDGE = 8192, CLIPS = 100;
+    static final int BYTES = 8 * 1024 * 1024, PAGES = 256, EDGE = 8192, CLIPS = 100, IMAGES = 100;
     static final Pattern CLIP = Pattern.compile("audio/clip-[1-9][0-9]{0,3}\\.m4a");
+    static final Pattern IMAGE = Pattern.compile("images/img-[1-9][0-9]{0,3}\\.png");
     private static final int DEPTH = 32, NODES = 450000, STRING = 131072;
     private StoreJson() {}
 
@@ -133,18 +134,28 @@ final class StoreJson {
         require(value >= min && value <= max, "Invalid " + key); return value;
     }
 
-    /** Validate the entire known logical schema. The returned paths are the complete clip manifest. */
+    /** Validate the entire known logical schema. The returned paths are the complete asset manifest. */
     static Set<String> validate(JSONObject doc) throws Exception {
         string(doc, "title", 512);
+        if (doc.has("docType")) string(doc, "docType", 16);
+        if (doc.has("cover")) {
+            JSONObject cover = doc.getJSONObject("cover");
+            String style = string(cover, "style", 16);
+            require(style.equals("spine") || style.equals("band") || style.equals("label")
+                || style.equals("plain"), "Unknown cover style");
+            whole(cover, "color", Integer.MIN_VALUE, Integer.MAX_VALUE);
+        }
         JSONArray pages = doc.getJSONArray("pages");
         require(pages.length() > 0 && pages.length() <= PAGES, "Notebook must have 1–256 pages");
-        int strokesLeft = 8192, pointsLeft = 80000;
+        int strokesLeft = 8192, pointsLeft = 80000, imagesLeft = IMAGES;
         for (int i = 0; i < pages.length(); ++i) {
             JSONObject p = pages.getJSONObject(i);
             int w = (int)whole(p, "w", 1, EDGE), h = (int)whole(p, "h", 1, EDGE);
             int pdf = (int)whole(p, "pdf", -1, PAGES - 1);
             checkPage(w, h, string(p, "paper", 64), pdf);
             string(p, "text", 32768); require(p.get("bookmark") instanceof Boolean, "Invalid bookmark");
+            if (p.has("tint")) whole(p, "tint", Integer.MIN_VALUE, Integer.MAX_VALUE);
+            if (p.has("docText")) string(p, "docText", 200000);
             JSONArray strokes = p.getJSONArray("ink");
             require((strokesLeft -= strokes.length()) >= 0, "Too many strokes");
             for (int j = 0; j < strokes.length(); ++j) {
@@ -155,6 +166,7 @@ final class StoreJson {
                 if (s.has("shape")) require(InkStroke.shapeKind(string(s, "shape", 16)), "Unknown shape");
                 whole(s, "argb", Integer.MIN_VALUE, Integer.MAX_VALUE);
                 require(number(s.get("width"), 0, 512) > 0, "Invalid ink width");
+                if (s.has("alpha")) number(s.get("alpha"), .05, 1);
                 JSONArray points = s.getJSONArray("points");
                 require(points.length() > 0 && (!shape || points.length() == 2) &&
                         (pointsLeft -= points.length()) >= 0, "Invalid ink point count");
@@ -163,6 +175,34 @@ final class StoreJson {
                     // Transformed selections may sit outside the page and are clipped when drawn.
                     number(pt.get(0), -w, 2.0 * w); number(pt.get(1), -h, 2.0 * h);
                     number(pt.get(2), 0, 2.5);
+                }
+            }
+            JSONArray texts = p.optJSONArray("texts");
+            if (texts != null) {
+                require(texts.length() <= 500, "Too many text blocks");
+                for (int j = 0; j < texts.length(); ++j) {
+                    JSONObject t = texts.getJSONObject(j);
+                    string(t, "text", 20000);
+                    number(t.get("x"), -w, 2.0 * w); number(t.get("y"), -h, 2.0 * h);
+                    number(t.get("w"), 0, 20000); number(t.get("size"), PageText.MIN_SIZE, PageText.MAX_SIZE);
+                    whole(t, "argb", Integer.MIN_VALUE, Integer.MAX_VALUE);
+                    String font = string(t, "font", 8);
+                    require(font.equals("serif") || font.equals("sans") || font.equals("mono")
+                        || font.equals("hand"), "Unknown font");
+                    require(t.get("bold") instanceof Boolean && t.get("italic") instanceof Boolean
+                        && t.get("underline") instanceof Boolean, "Invalid text style");
+                    whole(t, "align", 0, 2);
+                }
+            }
+            JSONArray images = p.optJSONArray("images");
+            if (images != null) {
+                require((imagesLeft -= images.length()) >= 0, "Too many pictures");
+                for (int j = 0; j < images.length(); ++j) {
+                    JSONObject g = images.getJSONObject(j);
+                    String path = string(g, "path", 32);
+                    require(IMAGE.matcher(path).matches(), "Invalid picture path");
+                    number(g.get("x"), -w, 2.0 * w); number(g.get("y"), -h, 2.0 * h);
+                    number(g.get("w"), 0, 20000); number(g.get("h"), 0, 20000);
                 }
             }
         }
@@ -175,16 +215,26 @@ final class StoreJson {
                 whole(c, "reviews", 0, Integer.MAX_VALUE);
             }
         }
-        Set<String> clips = new LinkedHashSet<>();
+        Set<String> assets = new LinkedHashSet<>();
         if (doc.has("audio")) {
             JSONArray a = doc.getJSONArray("audio"); require(a.length() <= CLIPS, "Too many recordings");
             for (int i = 0; i < a.length(); ++i) {
                 JSONObject c = a.getJSONObject(i); string(c, "name", 80);
                 String path = string(c, "path", 64);
-                require(CLIP.matcher(path).matches() && clips.add(path), "Invalid or duplicate recording path");
+                require(CLIP.matcher(path).matches() && assets.add(path), "Invalid or duplicate recording path");
                 whole(c, "durationMs", 0, Integer.MAX_VALUE); whole(c, "createdAt", 0, Long.MAX_VALUE);
             }
         }
-        return clips;
+        JSONArray pagesForImages = doc.getJSONArray("pages");
+        for (int i = 0; i < pagesForImages.length(); ++i) {
+            JSONArray images = pagesForImages.getJSONObject(i).optJSONArray("images");
+            if (images == null) continue;
+            for (int j = 0; j < images.length(); ++j) {
+                String path = images.getJSONObject(j).getString("path");
+                // The same picture may be placed twice; the manifest lists it once.
+                assets.add(path);
+            }
+        }
+        return assets;
     }
 }

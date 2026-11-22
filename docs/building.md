@@ -57,6 +57,18 @@ Neither the key nor the password is stored by the tooling in this repository.
 > Every later update must use the same certificate, otherwise Android treats it as a different
 > application and refuses to install over the top.
 
+## Translation coverage
+
+Every Chinese UI string is mapped to English in `Str.java`. Before a release, check that the map
+still covers the source:
+
+```powershell
+python -I .\tools\check_strings.py
+```
+
+The script lists any Chinese literal that has no English value; only deliberate non-UI strings
+(the "Aa 永" font sample and the "简体中文" language endonym) should remain.
+
 ## Tests
 
 Instrumentation (storage, ink history, PDF round-trip, bundled OCR, backup, permissions) runs on a

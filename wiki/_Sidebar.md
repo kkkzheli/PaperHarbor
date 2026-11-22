@@ -8,6 +8,7 @@
 - [页面与书架](Pages)
 - [设置与外观](Settings)
 - [数据、导出与备份](Data)
+- [分享与文件格式](Sharing)
 - [离线与隐私](Privacy)
 - [构建与签名](Build)
 - [常见问题](FAQ)

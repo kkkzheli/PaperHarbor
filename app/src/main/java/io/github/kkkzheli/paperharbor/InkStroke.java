@@ -1,6 +1,6 @@
 /*
  * PaperHarbor — an offline notebook for Android.
- * Copyright (c) kkkzheli. Original implementation, not affiliated with Goodnotes.
+ * Copyright (c) kkkzheli. Original implementation.
  */
 package io.github.kkkzheli.paperharbor;
 
@@ -21,11 +21,16 @@ import java.util.List;
 /**
  * Page-space geometry shared by input, hit testing, history and rendering.
  *
- * <p>Tools: {@code pen} (pressure-tapered), {@code brush} (speed- and pressure-tapered, drawn with
- * a calligraphic width profile), {@code marker} (flat translucent highlight), and shapes
+ * <p>Tools: {@code pen} (pressure-tapered), {@code brush} (speed- and pressure-tapered),
+ * {@code marker} (flat translucent highlight with its own opacity) and shapes
  * ({@code line}, {@code rect}, or {@code shape} with a {@code kind}). The third sample value holds
- * pressure for normal tools and the stored width factor for the brush, so a reloaded page redraws
- * exactly what was written.
+ * pressure for the pen, the stored width factor for the brush and is unused for the marker, so a
+ * reloaded page redraws exactly what was written.
+ *
+ * <p>Freehand outlines are built as one ribbon: the centreline is smoothed, each vertex takes the
+ * averaged normal of its two segments with a clamped miter and a curvature-dependent width, and
+ * round caps close both ends. That keeps a hand-drawn curve free of the spikes a naive per-segment
+ * quad produces where the direction changes quickly.
  */
 final class InkStroke {
     static final String[] SHAPES = {"line", "arrow", "rect", "circle", "ellipse",
@@ -39,6 +44,8 @@ final class InkStroke {
     private final Path path = new Path();
     private float[] xyz = new float[24];
     private int count;
+    private float markerAlpha = .38f;
+    private boolean dirty = true;
 
     InkStroke(String tool, int argb, float width) {
         this(tool, null, argb, width);
@@ -78,6 +85,14 @@ final class InkStroke {
         return kind == null ? "rect" : kind;
     }
 
+    /** Marker opacity, 0.05–1. Ignored by every other tool. */
+    void markerAlpha(float value) {
+        if (Float.isFinite(value)) markerAlpha = clamp(value, .05f, 1f);
+        dirty = true;
+    }
+
+    float markerAlpha() { return markerAlpha; }
+
     int count() { return count; }
     float x(int i) { return xyz[3*i]; }
     float y(int i) { return xyz[3*i + 1]; }
@@ -93,17 +108,20 @@ final class InkStroke {
 
     private float lastFactor = 1f;
 
-    /** Live input. The brush turns stroke speed and pressure into its stored width factor. */
+    /**
+     * Live input. The brush turns stroke speed and pressure into its stored width factor; the
+     * factor is low-pass filtered so a change of speed reads as a swell rather than a step.
+     */
     void sample(float x, float y, float p) {
         if ("brush".equals(tool)) {
             float target;
-            if (p < .999f) target = .22f + 1.55f * p;           // real stylus pressure
+            if (p < .999f) target = .45f + 1.05f * p;            // real stylus pressure
             else {
-                double speed = count == 0 ? 0 : Math.hypot(x - x(count-1), y - y(count-1));
-                target = (float)(.55 + .8 / (1 + speed * .55)); // faster stroke, finer line
+                double speed = count == 0 ? 4 : Math.hypot(x - x(count-1), y - y(count-1));
+                target = (float)(.55 + .95 / (1 + speed * .5));   // faster stroke, finer line
             }
-            lastFactor = count == 0 ? target : lastFactor * .62f + target * .38f;
-            p = InkStroke.clamp(lastFactor, .12f, 1.9f);
+            lastFactor = count == 0 ? target : lastFactor * .84f + target * .16f;
+            p = clamp(lastFactor, .28f, 1.6f);
             lastFactor = p;
         }
         sampleRaw(x, y, p);
@@ -112,7 +130,8 @@ final class InkStroke {
     /** Stores an already finalised sample value. Used by decode, transforms and splits. */
     void sampleRaw(float x, float y, float p) {
         if (isShape() && count == 2) count = 1; // replace preview endpoint
-        if (!isShape() && count > 0 && x(count-1) == x && y(count-1) == y) return;
+        if (!isShape() && count > 0 && Math.hypot(x - x(count-1), y - y(count-1)) < .35f
+                && !"marker".equals(tool)) return; // drop duplicate and tremor-level samples
         if (count * 3 == xyz.length) xyz = Arrays.copyOf(xyz, xyz.length * 2);
         int i = count++;
         xyz[i*3] = x; xyz[i*3+1] = y; xyz[i*3+2] = p;
@@ -120,71 +139,142 @@ final class InkStroke {
         bounds.left = Math.min(bounds.left, x); bounds.top = Math.min(bounds.top, y);
         bounds.right = Math.max(bounds.right, x); bounds.bottom = Math.max(bounds.bottom, y);
         lastFactor = p;
-        if (isShape()) return;
-        if ("marker".equals(tool)) {
-            if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
-            return;
-        }
-        appendWedge(i);
+        dirty = true;
     }
 
-    /** Adds the quad joining sample i-1 and i plus the cap circle, building one winding fill. */
-    private void appendWedge(int i) {
-        float r = radius(i);
-        if (i > 0) {
-            float ax = x(i-1), ay = y(i-1), ar = radius(i-1);
-            double len = Math.hypot(x(i) - ax, y(i) - ay);
-            if (len > 0) {
-                float nx = (float)(-(y(i)-ay)/len), ny = (float)((x(i)-ax)/len);
-                path.moveTo(ax + nx*ar, ay + ny*ar); path.lineTo(ax - nx*ar, ay - ny*ar);
-                path.lineTo(x(i) - nx*r, y(i) - ny*r); path.lineTo(x(i) + nx*r, y(i) + ny*r);
-                path.close();
-            }
-        }
-        path.addCircle(x(i), y(i), r, Path.Direction.CW);
-    }
-
-    /** Softens both ends of a freehand stroke so a fast flick still looks written. */
+    /** Softens the ends and evens out the width and centreline before the stroke is committed. */
     void taper() {
-        if (count < 4 || isShape() || "marker".equals(tool)) return;
+        if (count < 4 || isShape() || "marker".equals(tool)) { dirty = true; return; }
+        smoothValues();
         int[] head = {0, 1};
         for (int i : head) if (i < count) xyz[3*i + 2] *= i == 0 ? .45f : .72f;
         int[] tail = {count - 3, count - 2, count - 1};
         float[] scale = {.62f, .42f, .22f};
         for (int i = 0; i < tail.length; i++) xyz[3*tail[i] + 2] *= scale[i];
-        rebuild();
+        smoothPoints();
+        dirty = true;
     }
 
+    private void smoothValues() {
+        if (count < 3) return;
+        float[] v = new float[count];
+        for (int pass = 0; pass < 2; pass++) {
+            for (int i = 0; i < count; i++) {
+                if (i == 0 || i == count - 1) v[i] = xyz[3*i + 2];
+                else v[i] = (xyz[3*(i-1) + 2] + 2 * xyz[3*i + 2] + xyz[3*(i+1) + 2]) * .25f;
+            }
+            for (int i = 0; i < count; i++) xyz[3*i + 2] = v[i];
+        }
+    }
+
+    /** Two gentle passes over interior samples only; the endpoints never move. */
+    private void smoothPoints() {
+        if (count < 3) return;
+        float[] px = new float[count], py = new float[count];
+        for (int pass = 0; pass < 2; pass++) {
+            for (int i = 0; i < count; i++) {
+                if (i == 0 || i == count - 1) { px[i] = x(i); py[i] = y(i); }
+                else {
+                    px[i] = (x(i-1) + 2 * x(i) + x(i+1)) * .25f;
+                    py[i] = (y(i-1) + 2 * y(i) + y(i+1)) * .25f;
+                }
+            }
+            for (int i = 0; i < count; i++) { xyz[3*i] = px[i]; xyz[3*i+1] = py[i]; }
+            bounds.set(x(0), y(0), x(0), y(0));
+            for (int i = 1; i < count; i++) {
+                bounds.left = Math.min(bounds.left, x(i)); bounds.top = Math.min(bounds.top, y(i));
+                bounds.right = Math.max(bounds.right, x(i)); bounds.bottom = Math.max(bounds.bottom, y(i));
+            }
+        }
+    }
+
+    /**
+     * Rebuilds the filled outline: one smooth ribbon, with the half-width damped where the stroke
+     * turns sharply so a loaded brush never folds over itself into a spike.
+     */
     private void rebuild() {
         path.rewind();
+        int n = count;
+        if (n == 0) return;
         if ("marker".equals(tool)) {
-            for (int i = 0; i < count; i++) {
+            for (int i = 0; i < n; i++) {
                 if (i == 0) path.moveTo(x(i), y(i)); else path.lineTo(x(i), y(i));
             }
             return;
         }
-        for (int i = 0; i < count; i++) appendWedge(i);
+        if (n == 1) {
+            path.addCircle(x(0), y(0), Math.max(.05f, radius(0)), Path.Direction.CW);
+            return;
+        }
+        float[] lx = new float[n], ly = new float[n], rx = new float[n], ry = new float[n];
+        for (int i = 0; i < n; i++) {
+            float inx, iny, outx, outy;
+            if (i == 0) { inx = outx = x(1) - x(0); iny = outy = y(1) - y(0); }
+            else if (i == n - 1) {
+                inx = outx = x(n-1) - x(n-2); iny = outy = y(n-1) - y(n-2);
+            } else {
+                inx = x(i) - x(i-1); iny = y(i) - y(i-1);
+                outx = x(i+1) - x(i); outy = y(i+1) - y(i);
+            }
+            float lin = (float)Math.hypot(inx, iny), lout = (float)Math.hypot(outx, outy);
+            if (lin < 1e-4f) { inx = outx; iny = outy; lin = lout; }
+            if (lout < 1e-4f) { outx = inx; outy = iny; lout = lin; }
+            if (lin < 1e-4f) {
+                lx[i] = rx[i] = x(i); ly[i] = ry[i] = y(i);
+                continue;
+            }
+            float n0x = -iny / lin, n0y = inx / lin;
+            float n1x = -outy / lout, n1y = outx / lout;
+            float mx = n0x + n1x, my = n0y + n1y;
+            float ml = (float)Math.hypot(mx, my);
+            if (ml < 1e-3f) { mx = n1x; my = n1y; } else { mx /= ml; my /= ml; }
+            float dot = mx * n1x + my * n1y;
+            float miter = Math.min(2.4f, 1f / Math.max(.42f, Math.abs(dot)));
+            float cos = clamp(n0x * n1x + n0y * n1y, -1f, 1f);
+            float turn = (float)Math.acos(cos);
+            float damp = 1f - .40f * (turn / (float)Math.PI);
+            float r = radius(i) * damp;
+            lx[i] = x(i) + mx * r * miter; ly[i] = y(i) + my * r * miter;
+            rx[i] = x(i) - mx * r * miter; ry[i] = y(i) - my * r * miter;
+        }
+        path.moveTo(lx[0], ly[0]);
+        for (int i = 1; i < n; i++) path.lineTo(lx[i], ly[i]);
+        for (int i = n - 1; i >= 0; i--) path.lineTo(rx[i], ry[i]);
+        path.close();
+        // Round caps, so a flick keeps a soft head and tail instead of a cut edge.
+        path.addCircle(x(0), y(0), Math.max(.05f, radius(0)), Path.Direction.CW);
+        path.addCircle(x(n-1), y(n-1), Math.max(.05f, radius(n-1)), Path.Direction.CW);
     }
 
     void draw(Canvas c, Paint paint) {
         if (count == 0) return;
+        if (dirty) { rebuild(); dirty = false; }
         paint.setColor(argb);
         paint.setStyle(Paint.Style.FILL);
-        if (!isShape() && ("pen".equals(tool) || "brush".equals(tool))) { c.drawPath(path, paint); return; }
-        if ("marker".equals(tool)) paint.setAlpha(Math.round(Color.alpha(argb) * .38f));
-        if (count == 1 || (isShape() && x(0) == x(1) && y(0) == y(1))) {
+        int baseAlpha = Color.alpha(argb);
+        paint.setAlpha("marker".equals(tool) ? Math.round(baseAlpha * markerAlpha) : baseAlpha);
+        if (!isShape()) {
+            if ("marker".equals(tool)) {
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(width);
+                paint.setStrokeCap(Paint.Cap.ROUND);
+                paint.setStrokeJoin(Paint.Join.ROUND);
+            }
+            c.drawPath(path, paint);
+            return;
+        }
+        if (count == 1 || (x(0) == x(1) && y(0) == y(1))) {
             c.drawCircle(x(0), y(0), width * .5f, paint); return;
         }
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(width); paint.setStrokeCap(Paint.Cap.ROUND); paint.setStrokeJoin(Paint.Join.ROUND);
-        if ("marker".equals(tool)) { c.drawPath(path, paint); return; }
         c.drawPath(outline(), paint);
     }
 
     /** The drawn outline in page space; shapes are rebuilt from their two corner samples. */
     Path outline() {
         Path p = new Path();
-        if (!isShape()) { p.addPath(path); return p; }
+        if (!isShape()) { ensurePath(); p.addPath(path); return p; }
         float ax = x(0), ay = y(0), bx = x(1), by = y(1);
         String s = shape();
         if ("line".equals(s)) { p.moveTo(ax, ay); p.lineTo(bx, by); return p; }
@@ -212,6 +302,8 @@ final class InkStroke {
         }
         return p;
     }
+
+    private void ensurePath() { if (dirty) { rebuild(); dirty = false; } }
 
     private static void arrowHead(Path p, float ax, float ay, float bx, float by) {
         double angle = Math.atan2(by - ay, bx - ax);
@@ -250,7 +342,11 @@ final class InkStroke {
         return s;
     }
 
-    InkStroke copy() { return new InkStroke(tool, kind, argb, width); }
+    InkStroke copy() {
+        InkStroke s = new InkStroke(tool, kind, argb, width);
+        s.markerAlpha = markerAlpha;
+        return s;
+    }
 
     /** Uniform scale and rotation about (cx, cy). Points may leave the page; the canvas clips. */
     InkStroke transformed(float cx, float cy, float k, float angle) {
@@ -272,6 +368,7 @@ final class InkStroke {
             JSONObject o = new JSONObject().put("tool", tool).put("argb", argb)
                 .put("width", (double)width).put("points", pts);
             if ("shape".equals(tool)) o.put("shape", shape());
+            if ("marker".equals(tool)) o.put("alpha", (double)markerAlpha);
             return o;
         } catch (JSONException e) { throw new IllegalStateException("Non-finite ink sample", e); }
     }
@@ -284,6 +381,7 @@ final class InkStroke {
         JSONArray pts = obj.optJSONArray("points");
         if (!drawable(tool) || !Float.isFinite(width) || width <= 0 || pts == null || pts.length() == 0) return null;
         InkStroke s = new InkStroke(tool, kind, obj.optInt("argb", Color.BLACK), width);
+        if ("marker".equals(tool)) s.markerAlpha((float)obj.optDouble("alpha", .38));
         if (s.isShape() && pts.length() != 2) return null;
         float lo = -Math.max(w, h), hi = 2 * Math.max(w, h);
         for (int i=0; i<pts.length(); i++) {
@@ -337,7 +435,6 @@ final class InkStroke {
         switch (s) {
             case "circle": {
                 float half = Math.min(r - l, b - t) * .5f;
-                l = cx - half; r = cx + half; t = cy - half; b = cy + half;
                 return ellipsePolygon(cx, cy, half, half);
             }
             case "ellipse": return ellipsePolygon(cx, cy, (r-l)*.5f, (b-t)*.5f);
@@ -384,10 +481,14 @@ final class InkStroke {
     /**
      * Splits this stroke around the swept eraser disk. Returns null when nothing was removed, an
      * empty list when the whole stroke was covered, otherwise the surviving fragments.
+     *
+     * <p>Shapes used to be removed whole; now their outline is sampled and cut like any other
+     * stroke, so erasing across one side of a circle removes just that arc. The surviving pieces
+     * are stored as freehand ink because a shape is defined by exactly two corner samples.
      */
     List<InkStroke> eraseRange(float x0, float y0, float x1, float y1, float er) {
         if (count == 0) return null;
-        if (isShape()) return hits(x0, y0, x1, y1, er) ? new ArrayList<>() : null;
+        if (isShape()) return cutOutline(x0, y0, x1, y1, er);
         float step = Math.max(1f, er * .5f);
         List<InkStroke> out = new ArrayList<>();
         boolean touched = false;
@@ -413,11 +514,82 @@ final class InkStroke {
         return touched ? out : null;
     }
 
+    private List<InkStroke> cutOutline(float x0, float y0, float x1, float y1, float er) {
+        List<float[]> lines = shapePolylines();
+        float step = Math.max(1f, er * .5f);
+        List<InkStroke> out = new ArrayList<>();
+        boolean touched = false;
+        for (float[] line : lines) {
+            InkStroke current = null;
+            for (int i = 0; i + 1 < line.length; i += 2) {
+                if (i == 0) {
+                    if (covered(line[0], line[1], x0, y0, x1, y1, er)) { touched = true; current = null; }
+                    else {
+                        current = new InkStroke("pen", argb, width);
+                        current.sampleRaw(line[0], line[1], 1);
+                        out.add(current);
+                    }
+                    continue;
+                }
+                float px = line[i-2], py = line[i-1], qx = line[i], qy = line[i+1];
+                double len = Math.hypot(qx - px, qy - py);
+                int steps = Math.max(1, (int)Math.ceil(len / step));
+                for (int j = 1; j <= steps; j++) {
+                    float t = j / (float)steps;
+                    float sx = px + (qx - px) * t, sy = py + (qy - py) * t;
+                    if (covered(sx, sy, x0, y0, x1, y1, er)) { touched = true; current = null; }
+                    else {
+                        if (current == null) {
+                            current = new InkStroke("pen", argb, width);
+                            out.add(current);
+                        }
+                        current.sampleRaw(sx, sy, 1);
+                    }
+                }
+            }
+        }
+        if (!touched) return null;
+        for (InkStroke piece : out) if (piece.count() > 0) piece.taperSingle();
+        return out;
+    }
+
+    /** End softening without touching the stored width profile of a cut fragment. */
+    private void taperSingle() {
+        if (count < 4) return;
+        int[] tail = {count - 2, count - 1};
+        float[] scale = {.7f, .5f};
+        for (int i = 0; i < tail.length; i++) xyz[3*tail[i] + 2] *= scale[i];
+        dirty = true;
+    }
+
+    /** The shape as flat polylines, for cutting and hit testing. */
+    private List<float[]> shapePolylines() {
+        List<float[]> out = new ArrayList<>();
+        String s = shape();
+        float ax = x(0), ay = y(0), bx = x(1), by = y(1);
+        if ("line".equals(s)) { out.add(new float[] {ax, ay, bx, by}); return out; }
+        if ("arrow".equals(s)) {
+            out.add(new float[] {ax, ay, bx, by});
+            double angle = Math.atan2(by - ay, bx - ax);
+            double len = Math.hypot(bx - ax, by - ay);
+            float size = (float)Math.max(6, Math.min(len * .32, 40));
+            for (int side = 1; side >= -1; side -= 2) {
+                double a = angle + Math.PI + side * .42;
+                out.add(new float[] {bx, by, bx + (float)(Math.cos(a) * size), by + (float)(Math.sin(a) * size)});
+            }
+            return out;
+        }
+        float l = bounds.left, t = bounds.top, r = bounds.right, b = bounds.bottom;
+        float cx = (l + r) * .5f, cy = (t + b) * .5f;
+        float[] poly = outlinePolygon(s, l, t, r, b, cx, cy);
+        out.add(poly);
+        return out;
+    }
+
     private boolean covered(float x, float y, float ax, float ay, float bx, float by, float er) {
         return distanceToSegment(x, y, ax, ay, bx, by) <= er + width * .5f;
     }
 
-    /** Same as eraseRange but keeps whole strokes; true when touched. */
     private static double distanceToSegment(double px, double py, double ax, double ay, double bx, double by) {
         double dx = bx - ax, dy = by - ay, d = dx*dx + dy*dy;
         double t = d == 0 ? 0 : Math.max(0, Math.min(1, ((px-ax)*dx + (py-ay)*dy) / d));

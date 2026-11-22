@@ -14,8 +14,9 @@ import static io.github.kkkzheli.paperharbor.StoreJson.require;
 /** Single-notebook ZIP32 reader/writer. Nothing is extracted directly to a published notebook. */
 final class StoreArchive {
     static final String NOTE = "note.json", PDF = "source.pdf";
-    static final long MIB = 1L << 20, PDF_BYTES = 64*MIB, CLIP_BYTES = 16*MIB, TOTAL = 128*MIB;
-    private static final int ENTRIES = StoreJson.CLIPS + 3;
+    static final long MIB = 1L << 20, PDF_BYTES = 64*MIB, CLIP_BYTES = 16*MIB, IMG_BYTES = 8*MIB,
+        TOTAL = 128*MIB;
+    private static final int ENTRIES = StoreJson.CLIPS + StoreJson.IMAGES + 4;
     private StoreArchive() {}
 
     static long copy(InputStream in, OutputStream out, long limit, CRC32 crc) throws IOException {
@@ -37,7 +38,8 @@ final class StoreArchive {
         if (name.equals(NOTE)) return StoreJson.BYTES;
         if (name.equals(PDF)) return PDF_BYTES;
         if (StoreJson.CLIP.matcher(name).matches()) return CLIP_BYTES;
-        if (name.equals("audio/")) return 0;
+        if (StoreJson.IMAGE.matcher(name).matches()) return IMG_BYTES;
+        if (name.equals("audio/") || name.equals("images/")) return 0;
         throw new IOException("Unsupported notebook ZIP entry");
     }
 
@@ -77,9 +79,14 @@ final class StoreArchive {
                 require(size >= 0 && size <= cap && size <= remaining && compressed >= 0 && compressed <= compressedLeft,
                         "Invalid notebook ZIP entry size");
                 compressedLeft -= compressed; // Bound total decoder input even when entry ranges overlap.
-                if (name.equals("audio/")) { require(size == 0 && e.getCrc() == 0, "Invalid directory entry"); continue; }
+                if (name.equals("audio/") || name.equals("images/")) {
+                    require(size == 0 && e.getCrc() == 0, "Invalid directory entry"); continue;
+                }
                 require(size > 0, "Empty notebook asset");
-                File f = new File(stage, name); require(f.createNewFile(), "ZIP entry collision");
+                File f = new File(stage, name);
+                File parent = f.getParentFile();
+                if (parent != null && !parent.isDirectory() && !parent.mkdirs()) throw new IOException("Cannot create asset folder");
+                require(f.createNewFile(), "ZIP entry collision");
                 CRC32 crc = new CRC32();
                 try (InputStream src = zip.getInputStream(e); OutputStream dest = new FileOutputStream(f)) {
                     require(copy(src, dest, size, crc) == size && crc.getValue() == e.getCrc(), "Damaged notebook ZIP entry");
@@ -88,7 +95,8 @@ final class StoreArchive {
             }
         }
         require(seen.size() == count && seen.remove(NOTE), "Missing note.json");
-        Files.delete(archive.toPath()); seen.remove("audio/"); seen.remove(PDF); return seen;
+        Files.delete(archive.toPath()); seen.remove("audio/"); seen.remove("images/"); seen.remove(PDF);
+        return seen;
     }
 
     static void write(File dir, File json, Set<String> clips, OutputStream destination) throws IOException {
@@ -114,6 +122,17 @@ final class StoreArchive {
                 zip.closeEntry();
             }
         }
+    }
+
+    /** A restored picture must really be a PNG; the note.json path check alone is not enough. */
+    static void checkPng(File file) throws IOException {
+        fileSize(file, IMG_BYTES);
+        byte[] header = new byte[8];
+        try (FileInputStream in = new FileInputStream(file)) {
+            require(in.read(header) == header.length, "Missing PNG header");
+        }
+        byte[] signature = {(byte)0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a};
+        require(Arrays.equals(header, signature), "Picture is not a PNG");
     }
 
     /** Bound the input before probing. A .m4a extension alone does not establish an AAC recording. */
