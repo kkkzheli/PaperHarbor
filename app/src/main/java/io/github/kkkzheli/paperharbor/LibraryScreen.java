@@ -53,7 +53,7 @@ final class LibraryScreen extends FrameLayout {
   private static final class Meta {
     String id, title;
     int pages;
-    long modified;
+    long modified, bytes;
     JSONObject cover;
     String coverStyle = "spine";
     int coverColor = CoverArt.PALETTE[0];
@@ -229,6 +229,7 @@ final class LibraryScreen extends FrameLayout {
             try {
               File folder = store.folder(id);
               m.modified = new File(folder, "note.json").lastModified();
+              m.bytes = Store.size(folder);
             } catch (Exception ignored) { }
             result.add(m);
           } catch (Exception ignored) {
@@ -328,8 +329,8 @@ final class LibraryScreen extends FrameLayout {
       }
       Holder h = (Holder) card.getTag();
       h.title.setText(m.title);
-      String date = m.modified > 0 ? Str.date(m.modified) : "";
-      h.meta.setText(Str.noteMeta(m.pages, date));
+      String date = m.modified > 0 ? Str.dateTime(m.modified) : "";
+      h.meta.setText(Str.noteMeta(m.pages, Str.bytes(m.bytes), date));
       h.badge.setText(Str.cardBadge(m.pages));
       h.cover.setCover(m.coverStyle, m.coverColor);
       h.cover.setTitle(m.title);

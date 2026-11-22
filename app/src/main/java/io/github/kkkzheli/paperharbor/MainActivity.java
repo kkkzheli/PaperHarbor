@@ -7,13 +7,17 @@ package io.github.kkkzheli.paperharbor;
 import android.app.Activity;
 import android.app.Dialog;
 import android.content.ActivityNotFoundException;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.view.Gravity;
 import android.view.View;
@@ -204,7 +208,7 @@ public final class MainActivity extends Activity {
     }
     @Override public void exportPdf(String id, JSONObject snapshot) { startExport(id, snapshot, false, false, 0); }
     @Override public void exportImage(String id, JSONObject snapshot, int page) {
-      startExport(id, snapshot, false, true, page);
+      savePagePng(id, snapshot, page);
     }
     @Override public void backup(String id, JSONObject snapshot) { startExport(id, snapshot, true, false, 0); }
     @Override public void exportDocx(String id, JSONObject snapshot) { startDocxExport(id, snapshot); }
@@ -415,6 +419,52 @@ public final class MainActivity extends Activity {
         }
       });
     }
+  }
+
+  /**
+   * Saves the rendered page straight into the gallery. On Android 10 and newer this needs no
+   * permission and skips the document picker entirely; if the media store refuses, the document
+   * picker is used instead so the action never silently fails.
+   */
+  private void savePagePng(String id, JSONObject doc, int page) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+      startExport(id, doc, false, true, page);
+      return;
+    }
+    final String name = safeName(doc.optString("title", Str.of("笔记"))) + "-" + (page + 1) + ".png";
+    showLoading(Str.of("正在保存图片…"));
+    disk.execute(() -> {
+      Uri uri = null;
+      boolean saved = false;
+      try {
+        ContentValues values = new ContentValues();
+        values.put(MediaStore.Images.Media.DISPLAY_NAME, name);
+        values.put(MediaStore.Images.Media.MIME_TYPE, "image/png");
+        values.put(MediaStore.Images.Media.RELATIVE_PATH,
+            Environment.DIRECTORY_PICTURES + "/PaperHarbor");
+        values.put(MediaStore.Images.Media.IS_PENDING, 1);
+        uri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+        if (uri == null) throw new IOException("无法创建图片");
+        try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+          if (out == null) throw new IOException("无法写入图片");
+          writePagePng(id, doc, page, out);
+        }
+        ContentValues ready = new ContentValues();
+        ready.put(MediaStore.Images.Media.IS_PENDING, 0);
+        getContentResolver().update(uri, ready, null, null);
+        saved = true;
+      } catch (Exception ignored) {
+        if (uri != null) {
+          try { getContentResolver().delete(uri, null, null); } catch (Exception ignored2) { }
+        }
+      }
+      final boolean ok = saved;
+      runOnUiThread(() -> {
+        hideLoading();
+        if (ok) toast(Str.of("已保存到相册 Pictures/PaperHarbor"));
+        else startExport(id, doc, false, true, page);
+      });
+    });
   }
 
   /** Renders one page to PNG at twice its stored page size. */

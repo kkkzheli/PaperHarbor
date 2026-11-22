@@ -31,6 +31,31 @@ final class ShapeRecognizer {
 
     private ShapeRecognizer() {}
 
+    /**
+     * Recognises a stroke with an optional target chosen in the magic-pen sheet. {@code auto}
+     * keeps the free guess; naming a kind turns the drawn stroke into exactly that shape, using
+     * its box (or its two ends for a line), which is what "make this a rectangle" means even when
+     * the hand was sloppy.
+     */
+    static Match recognize(InkStroke stroke, String target) {
+        if (stroke == null || stroke.count() < 2 || stroke.isShape()) return null;
+        if (target == null || "auto".equals(target)) return recognize(stroke);
+        boolean closedKind = "rect".equals(target) || "circle".equals(target) || "ellipse".equals(target)
+            || "triangle".equals(target) || "diamond".equals(target);
+        if (!closedKind && !"line".equals(target)) return recognize(stroke);
+        if ("line".equals(target)) {
+            return new Match("line", stroke.x(0), stroke.y(0),
+                stroke.x(stroke.count() - 1), stroke.y(stroke.count() - 1));
+        }
+        float l = Float.MAX_VALUE, t = Float.MAX_VALUE, r = -Float.MAX_VALUE, b = -Float.MAX_VALUE;
+        for (int i = 0; i < stroke.count(); i++) {
+            l = Math.min(l, stroke.x(i)); t = Math.min(t, stroke.y(i));
+            r = Math.max(r, stroke.x(i)); b = Math.max(b, stroke.y(i));
+        }
+        if (Math.hypot(r - l, b - t) < 12) return null;
+        return new Match(target, l, t, r, b);
+    }
+
     /** Returns a shape guess, or null to keep the freehand line. */
     static Match recognize(InkStroke stroke) {
         if (stroke == null || stroke.count() < 6 || stroke.isShape()) return null;

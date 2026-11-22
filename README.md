@@ -11,7 +11,8 @@ licensed by, or derived from Goodnotes; no code, artwork or subscription from th
 
 ## What it does
 
-- **Shelf** — covers show a style and colour you choose for each notebook; search across titles,
+- **Shelf** — covers show a style and colour you choose for each notebook; every card lists its
+  page count, its size on disk and the full date and time it was last saved; search across titles,
   typed page text, imported document text and recognised text; sort by recently edited, title or
   page count.
 - **Notebook covers** — four constructions (spine, band, label, plain) and eight colours, picked
@@ -19,16 +20,19 @@ licensed by, or derived from Goodnotes; no code, artwork or subscription from th
 - **Paper** — five patterns (ruled, grid, dot, blank, Cornell) and six paper tints, chosen per
   notebook and changed per page from *More → Page style*.
 - **Pens** — a hard pen with pressure taper, a soft brush whose width follows speed, pressure and
-  curvature, and a translucent highlighter whose opacity is adjustable from its own chooser.
-- **Eraser** — remove whole strokes, or erase only the area you sweep across; area erasing now cuts
-  shapes too, so one side of a circle can be removed without losing the rest.
+  curvature with a smooth body even at the widest setting, and a translucent highlighter whose
+  opacity is adjustable from its own chooser.
+- **Eraser** — remove whole strokes, or erase only the area you sweep across; area erasing cuts
+  shapes and thick strokes cleanly, with rounded ends instead of nibbled edges.
 - **Shapes and the magic pen** — line, arrow, rectangle, circle, ellipse, triangle, diamond,
   pentagon, star and hexagon; the magic pen turns a rough sketch into a straight line, circle,
-  ellipse, rectangle, diamond or triangle and keeps your own stroke when nothing matches.
+  ellipse, rectangle, diamond or triangle, and its chooser can force the target shape instead of
+  guessing. It keeps your own stroke when nothing matches.
 - **Text blocks** — tap the page with the text tool to place editable text with four typefaces,
-  size, colour, bold, italic, underline and left/centre/right alignment. *Scan* reads the page
-  with the bundled OCR, *Formula* converts LaTeX fragments to Unicode maths, *Translate* hands the
-  text to another installed app.
+  size, colour, bold, italic, underline and left/centre/right alignment. *Formula* typesets the
+  LaTeX in the box — stacked fractions, radicals whose overline covers the radicand, and limits
+  above and below `\sum`, `\prod` and `\lim` — in the chosen typeface. *Scan* reads the page with
+  the bundled OCR, *Translate* hands the text to another installed app.
 - **Pictures** — insert a photo or screenshot into the page, move it, duplicate it or delete it.
 - **Roam** — a dedicated mode where one finger moves the page, a double tap zooms and a pinch
   works as usual, so a dense page can be inspected without switching tools.
@@ -42,7 +46,8 @@ licensed by, or derived from Goodnotes; no code, artwork or subscription from th
 - **Study and audio** — two-sided flashcards with self-rating, and local AAC recordings.
 - **Import** — PDF, images, `.docx` and `.phnote`. A PDF or Word document becomes a notebook whose
   original content stays read-only and is annotated with ink, text blocks and pictures.
-- **Export and share** — PDF, one page as PNG, an editable `.phnote`, or a `.docx` whose pages are
+- **Export and share** — PDF, one page as PNG (saved straight into `Pictures/PaperHarbor` on
+  Android 10+, no picker and no permission), an editable `.phnote`, or a `.docx` whose pages are
   the rendered pages with your annotations. The share sheet sends any of them to another installed
   app through a read-only provider.
 - **Settings** — light/dark/system theme, six accent colours, language (system, Chinese, English),
@@ -80,7 +85,7 @@ modified either: annotation happens on top, and the export creates a new file.
 
 ## Install
 
-Download `PaperHarbor-1.1.0.apk` from the releases page and sideload it. It is a release build
+Download `PaperHarbor-1.1.1.apk` from the releases page and sideload it. It is a release build
 (`debuggable=false`) signed with a locally generated key; the package is
 `io.github.kkkzheli.paperharbor` and Android 8.0 (API 26) or newer is required.
 
@@ -105,7 +110,7 @@ python -I .\tools\verify-apk.py .\app\build\outputs\apk\release\app-release.apk 
 signature and prints the SHA-256. Instrumentation tests run on a dedicated device or emulator with
 `connectedDebugAndroidTest`; `tools/offline-smoke.py` drives the real UI in airplane mode and
 `tools/layout-check.py` checks portrait, landscape and 360 dp. Acceptance notes for this build are
-in [docs/verification-1.1.0.md](docs/verification-1.1.0.md).
+in [docs/verification-1.1.1.md](docs/verification-1.1.1.md).
 
 ## Licence and attribution
 

@@ -115,13 +115,15 @@ final class InkStroke {
     void sample(float x, float y, float p) {
         if ("brush".equals(tool)) {
             float target;
-            if (p < .999f) target = .45f + 1.05f * p;            // real stylus pressure
+            if (p < .999f) target = .68f + .52f * p;             // real stylus pressure
             else {
                 double speed = count == 0 ? 4 : Math.hypot(x - x(count-1), y - y(count-1));
-                target = (float)(.55 + .95 / (1 + speed * .5));   // faster stroke, finer line
+                // A loaded brush swells when it moves slowly and thins out at speed, but the
+                // range stays narrow enough that a thick stroke keeps an even body.
+                target = (float)(.78 + .42 / (1 + speed * .55));
             }
-            lastFactor = count == 0 ? target : lastFactor * .84f + target * .16f;
-            p = clamp(lastFactor, .28f, 1.6f);
+            lastFactor = count == 0 ? target : lastFactor * .88f + target * .12f;
+            p = clamp(lastFactor, .45f, 1.32f);
             lastFactor = p;
         }
         sampleRaw(x, y, p);
@@ -145,20 +147,35 @@ final class InkStroke {
     /** Softens the ends and evens out the width and centreline before the stroke is committed. */
     void taper() {
         if (count < 4 || isShape() || "marker".equals(tool)) { dirty = true; return; }
-        smoothValues();
-        int[] head = {0, 1};
-        for (int i : head) if (i < count) xyz[3*i + 2] *= i == 0 ? .45f : .72f;
-        int[] tail = {count - 3, count - 2, count - 1};
-        float[] scale = {.62f, .42f, .22f};
-        for (int i = 0; i < tail.length; i++) xyz[3*tail[i] + 2] *= scale[i];
+        smoothValues("brush".equals(tool) ? 3 : 2);
+        if ("brush".equals(tool)) {
+            // A brush is put down and lifted gradually. Ramping the first and last samples over a
+            // longer stretch keeps a thick stroke rounded instead of ending in a needle.
+            int head = Math.min(6, Math.max(1, count / 3));
+            for (int i = 0; i < head; i++) {
+                float t = (i + 1f) / head;
+                xyz[3*i + 2] *= .62f + .38f * t;
+            }
+            int tail = Math.min(10, Math.max(2, count / 3));
+            for (int k = 0; k < tail; k++) {
+                float t = 1f - (k + 1f) / tail;
+                xyz[3*(count - tail + k) + 2] *= .52f + .48f * t;
+            }
+        } else {
+            int[] head = {0, 1};
+            for (int i : head) if (i < count) xyz[3*i + 2] *= i == 0 ? .55f : .8f;
+            int[] tail = {count - 3, count - 2, count - 1};
+            float[] scale = {.75f, .58f, .4f};
+            for (int i = 0; i < tail.length; i++) xyz[3*tail[i] + 2] *= scale[i];
+        }
         smoothPoints();
         dirty = true;
     }
 
-    private void smoothValues() {
+    private void smoothValues(int passes) {
         if (count < 3) return;
         float[] v = new float[count];
-        for (int pass = 0; pass < 2; pass++) {
+        for (int pass = 0; pass < passes; pass++) {
             for (int i = 0; i < count; i++) {
                 if (i == 0 || i == count - 1) v[i] = xyz[3*i + 2];
                 else v[i] = (xyz[3*(i-1) + 2] + 2 * xyz[3*i + 2] + xyz[3*(i+1) + 2]) * .25f;
@@ -229,21 +246,36 @@ final class InkStroke {
             float ml = (float)Math.hypot(mx, my);
             if (ml < 1e-3f) { mx = n1x; my = n1y; } else { mx /= ml; my /= ml; }
             float dot = mx * n1x + my * n1y;
-            float miter = Math.min(2.4f, 1f / Math.max(.42f, Math.abs(dot)));
+            boolean brush = "brush".equals(tool);
+            // A loaded brush should not grow a spike where the hand turns; the pen keeps a
+            // sharper miter because that is what gives it its crisp corner.
+            float miter = Math.min(brush ? 1.25f : 2.4f, 1f / Math.max(.42f, Math.abs(dot)));
             float cos = clamp(n0x * n1x + n0y * n1y, -1f, 1f);
             float turn = (float)Math.acos(cos);
-            float damp = 1f - .40f * (turn / (float)Math.PI);
+            float damp = 1f - (brush ? .26f : .40f) * (turn / (float)Math.PI);
             float r = radius(i) * damp;
             lx[i] = x(i) + mx * r * miter; ly[i] = y(i) + my * r * miter;
             rx[i] = x(i) - mx * r * miter; ry[i] = y(i) - my * r * miter;
         }
+        // One continuous contour: the two long sides and a semicircular cap at each end. The
+        // caps are part of the contour, not separate circles, so the overlap never punches a
+        // hole through the end of a thick stroke.
+        path.setFillType(Path.FillType.WINDING);
         path.moveTo(lx[0], ly[0]);
         for (int i = 1; i < n; i++) path.lineTo(lx[i], ly[i]);
-        for (int i = n - 1; i >= 0; i--) path.lineTo(rx[i], ry[i]);
+        capArc(x(n-1), y(n-1), lx[n-1], ly[n-1]);
+        for (int i = n - 2; i >= 0; i--) path.lineTo(rx[i], ry[i]);
+        capArc(x(0), y(0), rx[0], ry[0]);
         path.close();
-        // Round caps, so a flick keeps a soft head and tail instead of a cut edge.
-        path.addCircle(x(0), y(0), Math.max(.05f, radius(0)), Path.Direction.CW);
-        path.addCircle(x(n-1), y(n-1), Math.max(.05f, radius(n-1)), Path.Direction.CW);
+    }
+
+    /** Half-turn around the endpoint, from the current side of the ribbon to the other one. */
+    private void capArc(float cx, float cy, float fromX, float fromY) {
+        float r = (float)Math.hypot(fromX - cx, fromY - cy);
+        if (r < .25f) { path.lineTo(2 * cx - fromX, 2 * cy - fromY); return; }
+        RectF oval = new RectF(cx - r, cy - r, cx + r, cy + r);
+        float start = (float)Math.toDegrees(Math.atan2(fromY - cy, fromX - cx));
+        path.arcTo(oval, start, -180f, false);
     }
 
     void draw(Canvas c, Paint paint) {

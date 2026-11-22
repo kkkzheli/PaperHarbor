@@ -24,6 +24,9 @@ final class MathText {
 
     static String toUnicode(String input) { return convert(input == null ? "" : input, 0); }
 
+    /** A named symbol such as {@code alpha}, or null. Used by the box typesetter as well. */
+    static String symbolFor(String name) { return SYMBOLS.get(name); }
+
     private static String convert(String input, int depth) {
         if (depth > 8) return input;
         String s = input;

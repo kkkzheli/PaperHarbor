@@ -355,7 +355,10 @@ final class EditorScreen extends FrameLayout {
 
   private void onMagicButton() {
     if ("magic".equals(tool)) showMagicSheet();
-    else selectTool("magic");
+    else {
+      selectTool("magic");
+      toast(Str.of("再点一次可以选择要还原的图形"));
+    }
   }
 
   private void onMarkerButton() {
@@ -440,6 +443,7 @@ final class EditorScreen extends FrameLayout {
   private void applyInkSettings() {
     ink.tool(tool);
     ink.shapeKind(prefs.shape());
+    ink.magicShape(prefs.magicShape());
     ink.color(color);
     ink.width(widthForTool());
     ink.areaErase(prefs.eraseMode() == 1);
@@ -592,7 +596,7 @@ final class EditorScreen extends FrameLayout {
     content.addView(Ui.sheetHeader(a, editing ? "编辑文字" : "插入文字", () -> ref[0].dismiss()));
 
     EditText box = new EditText(a);
-    box.setText(editing ? existing.text : "");
+    box.setText(editing ? (existing.isFormula() ? existing.tex : existing.text) : "");
     box.setHint(Str.of("在这里输入文字"));
     box.setHintTextColor(Ui.HINT);
     box.setTextColor(Ui.INK);
@@ -724,16 +728,36 @@ final class EditorScreen extends FrameLayout {
     LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
     tlp.topMargin = Ui.dp(a, 12);
     content.addView(tools, tlp);
-    addSpaced(tools, Ui.pillButton(a, R.drawable.ic_scan, "识别", Ui.SURFACE_SOFT, Ui.INK,
-        () -> recognizePageInto(box)));
-    addSpaced(tools, Ui.pillButton(a, R.drawable.ic_formula, "公式", Ui.SURFACE_SOFT, Ui.INK, () -> {
-      String converted = MathText.toUnicode(box.getText().toString());
-      box.setText(converted);
-      box.setSelection(converted.length());
-      toast("已转换为公式文本");
-    }));
-    addSpaced(tools, Ui.pillButton(a, R.drawable.ic_translate, "翻译", Ui.SURFACE_SOFT, Ui.INK,
-        () -> translate(box.getText().toString())));
+    final String[] tex = {editing && existing.isFormula() ? existing.tex : null};
+    final View[] formulaPill = new View[1];
+    View pill = Ui.compactPill(a, R.drawable.ic_formula, "公式",
+        tex[0] != null ? Ui.ACCENT : Ui.SURFACE_SOFT, tex[0] != null ? Ui.ON_INK : Ui.INK, () -> {
+          if (tex[0] == null) {
+            String source = box.getText().toString().trim();
+            if (source.isEmpty()) { toast(Str.of("先输入 LaTeX 公式")); return; }
+            tex[0] = source;
+            toast(Str.of("这一块将按公式排版，再点一次可取消"));
+          } else {
+            tex[0] = null;
+            toast(Str.of("已改回普通文本"));
+          }
+          syncPill(formulaPill[0], tex[0] != null, Ui.ACCENT, Ui.SURFACE_SOFT);
+        });
+    formulaPill[0] = pill;
+    View[] toolPills = {
+        Ui.compactPill(a, R.drawable.ic_scan, "识别", Ui.SURFACE_SOFT, Ui.INK,
+            () -> recognizePageInto(box)),
+        pill,
+        Ui.compactPill(a, R.drawable.ic_translate, "翻译", Ui.SURFACE_SOFT, Ui.INK,
+            () -> translate(tex[0] != null ? MathText.toUnicode(box.getText().toString())
+                : box.getText().toString()))
+    };
+    for (int i = 0; i < toolPills.length; i++) {
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+          0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+      if (i > 0) lp.leftMargin = Ui.dp(a, 6);
+      tools.addView(toolPills[i], lp);
+    }
 
     TextView note = Ui.text(a,
         "识别在本机完成；翻译会交给手机上已安装的其他应用，本应用不联网。公式把 LaTeX 片段转成 Unicode 数学文本。",
@@ -765,6 +789,10 @@ final class EditorScreen extends FrameLayout {
       if (value.trim().isEmpty()) { box.setError(Str.of("文字不能为空")); return; }
       PageText block = PageText.of(px, py, value, size[0], inkColor[0], font[0],
           bold[0], italic[0], underline[0], align[0], wrapW);
+      if (tex[0] != null) {
+        block.formula(value);
+        block.text = MathText.toUnicode(value);   // keeps the block searchable
+      }
       if (editing) ink.replaceSelectedText(block); else ink.addText(block);
       prefs.setTextSize(size[0]);
       prefs.setTextFont(font[0]);
@@ -790,6 +818,21 @@ final class EditorScreen extends FrameLayout {
     LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(width, height);
     lp.leftMargin = Ui.dp(a, 10);
     row.addView(view, lp);
+  }
+
+  /** Repaints a compact pill for its on/off state without rebuilding the row. */
+  private void syncPill(View pill, boolean on, int activeFill, int idleFill) {
+    pill.setBackground(Ui.ripple(on ? activeFill : idleFill, 22, a));
+    tintPill(pill, on ? Ui.ON_INK : Ui.INK);
+  }
+
+  private void tintPill(View view, int color) {
+    if (view instanceof ImageView) ((ImageView) view).setColorFilter(color);
+    else if (view instanceof TextView) ((TextView) view).setTextColor(color);
+    if (view instanceof ViewGroup) {
+      ViewGroup group = (ViewGroup) view;
+      for (int i = 0; i < group.getChildCount(); i++) tintPill(group.getChildAt(i), color);
+    }
   }
 
   private TextView styleChip(String label, int typefaceStyle) {
@@ -1687,20 +1730,16 @@ final class EditorScreen extends FrameLayout {
     for (int row = 0; row < 2; row++) {
       LinearLayout line = Ui.row(a);
       LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-      if (row > 0) llp.topMargin = Ui.dp(a, 6);
+      if (row > 0) llp.topMargin = Ui.dp(a, 4);
       for (int col = 0; col < 5; col++) {
         final int i = row * 5 + col;
         final String kind = kinds[i];
-        View tile = Ui.iconTile(a, icons[i], names[i], false, () -> {
+        View tile = Ui.choiceIcon(a, icons[i], names[i], kind.equals(current), () -> {
           prefs.setShape(kind);
           selectTool("shape");
           ink.shapeKind(kind);
           ref[0].dismiss();
         });
-        tile.setSelected(kind.equals(current));
-        if (kind.equals(current)) {
-          tile.setBackground(Ui.ripple(Ui.ACCENT_SOFT, 18, a));
-        }
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
         if (col > 0) lp.leftMargin = Ui.dp(a, 2);
         line.addView(tile, lp);
@@ -1714,35 +1753,41 @@ final class EditorScreen extends FrameLayout {
 
   private void showMagicSheet() {
     LinearLayout content = Ui.column(a);
-    content.setPadding(Ui.dp(a, 22), 0, Ui.dp(a, 22), Ui.dp(a, 24));
+    content.setPadding(Ui.dp(a, 18), 0, Ui.dp(a, 18), Ui.dp(a, 24));
     Dialog[] ref = new Dialog[1];
     content.addView(Ui.sheetHeader(a, "魔法笔", () -> ref[0].dismiss()));
     TextView hint = Ui.text(a,
-        "随手画个大概：直的变直线，圆的变圆，方框变矩形，三角形也会自动规整。认不出来时保留你的原笔迹。",
+        "随手画个大概，再选要还原成哪种图形；「自由」会按形状自动判断，认不出来时保留原笔迹。",
         13.5f, Ui.MUTED);
-    hint.setPadding(0, Ui.dp(a, 4), 0, Ui.dp(a, 14));
+    hint.setPadding(0, Ui.dp(a, 4), Ui.dp(a, 2), Ui.dp(a, 12));
     hint.setLineSpacing(Ui.dp(a, 3), 1f);
     content.addView(hint);
-    LinearLayout samples = Ui.row(a);
-    int[] icons = {R.drawable.ic_line, R.drawable.ic_circle, R.drawable.ic_rect, R.drawable.ic_magic};
-    String[] names = {"直线", "圆", "矩形", "自由"};
-    for (int i = 0; i < icons.length; i++) {
-      LinearLayout cell = Ui.column(a);
-      cell.setGravity(Gravity.CENTER);
-      ImageView glyph = new ImageView(a);
-      glyph.setImageResource(icons[i]);
-      glyph.setColorFilter(Ui.INK);
-      glyph.setLayoutParams(new LinearLayout.LayoutParams(Ui.dp(a, 44), Ui.dp(a, 44)));
-      glyph.setPadding(Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8));
-      glyph.setBackground(Ui.round(a, Ui.SURFACE_SOFT, 14));
-      cell.addView(glyph);
-      TextView name = Ui.text(a, names[i], 10.5f, Ui.MUTED);
-      name.setPadding(0, Ui.dp(a, 6), 0, 0);
-      cell.addView(name);
-      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-      samples.addView(cell, lp);
+
+    final String[] kinds = {"auto", "line", "rect", "circle", "ellipse", "triangle"};
+    final String[] names = {"自由", "直线", "矩形", "圆", "椭圆", "三角形"};
+    final int[] icons = {R.drawable.ic_magic, R.drawable.ic_line, R.drawable.ic_rect,
+        R.drawable.ic_circle, R.drawable.ic_ellipse, R.drawable.ic_triangle};
+    final String current = prefs.magicShape();
+    for (int row = 0; row < 2; row++) {
+      LinearLayout line = Ui.row(a);
+      LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+      if (row > 0) llp.topMargin = Ui.dp(a, 4);
+      for (int col = 0; col < 3; col++) {
+        final int i = row * 3 + col;
+        final String kind = kinds[i];
+        View tile = Ui.choiceIcon(a, icons[i], names[i], kind.equals(current), () -> {
+          prefs.setMagicShape(kind);
+          ink.magicShape(kind);
+          selectTool("magic");
+          ref[0].dismiss();
+          toast(Str.of("魔法笔：") + Str.of(names[i]));
+        });
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        if (col > 0) lp.leftMargin = Ui.dp(a, 2);
+        line.addView(tile, lp);
+      }
+      content.addView(line, llp);
     }
-    content.addView(samples);
     Dialog d = Ui.sheet(a, content, true);
     ref[0] = d;
     d.show();

@@ -204,6 +204,11 @@ final class Ui {
     b.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
     b.setPadding(dp(c, boxDp * .25f), dp(c, boxDp * .25f), dp(c, boxDp * .25f), dp(c, boxDp * .25f));
     b.setBackground(ripple(new GradientDrawable(), boxDp / 2f, c));
+    // A dialog closing hands focus back to the button that opened it, and Android then paints a
+    // focus ring around it. These are touch controls: the selected tool has its own filled
+    // highlight, so the extra frame is only noise.
+    b.setFocusable(false);
+    b.setDefaultFocusHighlightEnabled(false);
     b.setContentDescription(Str.of(desc));
     b.setMinimumWidth(0);
     b.setMinimumHeight(0);
@@ -412,7 +417,8 @@ final class Ui {
     tile.setGravity(Gravity.CENTER);
     tile.setBackground(ripple(new GradientDrawable(), 18, c));
     tile.setClickable(true);
-    tile.setFocusable(true);
+    tile.setFocusable(false);
+    tile.setDefaultFocusHighlightEnabled(false);
     ImageView icon = new ImageView(c);
     icon.setImageResource(res);
     icon.setColorFilter(danger ? DANGER : INK);
@@ -431,6 +437,37 @@ final class Ui {
     tile.setContentDescription(Str.of(label));
     tile.setOnClickListener(v -> click.run());
     return tile;
+  }
+
+  /**
+   * A tool choice whose selection lives on the icon chip itself: the chosen button turns into a
+   * solid accent square, and nothing is drawn around the whole cell.
+   */
+  static LinearLayout choiceIcon(Context c, int res, String label, boolean selected, Runnable click) {
+    LinearLayout cell = column(c);
+    cell.setGravity(Gravity.CENTER);
+    cell.setBackground(ripple(new GradientDrawable(), 16, c));
+    cell.setClickable(true);
+    cell.setFocusable(false);
+    cell.setDefaultFocusHighlightEnabled(false);
+    cell.setPadding(dp(c, 4), dp(c, 6), dp(c, 4), dp(c, 4));
+    ImageView icon = new ImageView(c);
+    icon.setImageResource(res);
+    icon.setColorFilter(selected ? ON_INK : INK);
+    int box = dp(c, 46);
+    icon.setLayoutParams(new LinearLayout.LayoutParams(box, box));
+    icon.setPadding(dp(c, 10), dp(c, 10), dp(c, 10), dp(c, 10));
+    icon.setBackground(round(c, selected ? ACCENT : SURFACE_SOFT, 16));
+    cell.addView(icon);
+    TextView name = text(c, label, 11.5f, selected ? ACCENT : INK);
+    name.setGravity(Gravity.CENTER);
+    LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    tlp.topMargin = dp(c, 6);
+    cell.addView(name, tlp);
+    cell.setContentDescription(Str.of(label));
+    cell.setOnClickListener(v -> click.run());
+    return cell;
   }
 
   static LinearLayout iconRow(Context c, int res, String label, boolean danger, Runnable click) {
@@ -481,6 +518,41 @@ final class Ui {
       b.addView(t, tl);
     } else {
       b.addView(text(c, label, 14.5f, tint));
+    }
+    b.setContentDescription(Str.of(label));
+    b.setOnClickListener(v -> click.run());
+    return b;
+  }
+
+  /**
+   * A pill built to share a row evenly with its neighbours. The label stays on one line in both
+   * languages, which the normal pill cannot promise for longer English words.
+   */
+  static View compactPill(Context c, int res, String label, int fill, int tint, Runnable click) {
+    LinearLayout b = row(c);
+    b.setGravity(Gravity.CENTER);
+    b.setBackground(ripple(fill, 22, c));
+    b.setClickable(true);
+    b.setFocusable(false);
+    b.setDefaultFocusHighlightEnabled(false);
+    b.setPadding(dp(c, 6), dp(c, 10), dp(c, 6), dp(c, 10));
+    b.setMinimumHeight(dp(c, 44));
+    if (res != 0) {
+      ImageView icon = new ImageView(c);
+      icon.setImageResource(res);
+      icon.setColorFilter(tint);
+      icon.setLayoutParams(new LinearLayout.LayoutParams(dp(c, 16), dp(c, 16)));
+      b.addView(icon);
+      TextView t = text(c, label, 12.5f, tint);
+      t.setSingleLine(true);
+      LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(
+          ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+      tl.leftMargin = dp(c, 5);
+      b.addView(t, tl);
+    } else {
+      TextView t = text(c, label, 13, tint);
+      t.setSingleLine(true);
+      b.addView(t);
     }
     b.setContentDescription(Str.of(label));
     b.setOnClickListener(v -> click.run());

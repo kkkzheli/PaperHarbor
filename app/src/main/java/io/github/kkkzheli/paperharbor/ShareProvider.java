@@ -26,7 +26,8 @@ import java.io.FileNotFoundException;
  */
 public final class ShareProvider extends ContentProvider {
     private static final String FOLDER = "share";
-    private static final String NAME = "[A-Za-z0-9._-]{1,80}";
+    /** Any file name except a separator or a control character, so Chinese titles share fine. */
+    private static final String NAME = "[^/\\\\\\x00-\\x1f]{1,120}";
 
     static File folder(Context c) {
         File dir = new File(c.getCacheDir(), FOLDER);

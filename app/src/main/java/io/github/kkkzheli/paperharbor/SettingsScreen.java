@@ -456,11 +456,7 @@ final class SettingsScreen extends android.widget.FrameLayout {
     return total;
   }
 
-  static String human(long bytes) {
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1024 * 1024) return String.format(Locale.ROOT, "%.1f KB", bytes / 1024f);
-    return String.format(Locale.ROOT, "%.1f MB", bytes / (1024f * 1024f));
-  }
+  static String human(long bytes) { return Str.bytes(bytes); }
 
   private void open(String url) {
     try {

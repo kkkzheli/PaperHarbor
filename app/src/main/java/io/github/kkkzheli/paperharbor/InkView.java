@@ -92,6 +92,7 @@ public final class InkView extends View {
     private float width=2.5f;
     private int argb=0xff22272e;
     private boolean stylusOnly, areaErase, magic;
+    private String magicTarget = "auto";
     private float pressure = 1f;
     private float markerAlpha = .38f;
     private final float dp;
@@ -180,6 +181,8 @@ public final class InkView extends View {
     public String shapeKind() { return shapeKind; }
     /** 0 = remove whole strokes, 1 = remove only the swept area. */
     public void areaErase(boolean on) { areaErase=on; }
+    /** The shape the magic pen should produce; {@code auto} keeps the free guess. */
+    public void magicShape(String kind) { magicTarget = kind == null ? "auto" : kind; }
     public void color(int argb) { this.argb=argb; }
     public void width(float pageUnits) {
         if (Float.isFinite(pageUnits) && pageUnits>0) width=Math.min(512f,pageUnits);
@@ -823,7 +826,7 @@ public final class InkView extends View {
         List<PageImage> nextImages=null;
         if (mode==DRAW) {
             if (magic) {
-                ShapeRecognizer.Match match = ShapeRecognizer.recognize(draft);
+                ShapeRecognizer.Match match = ShapeRecognizer.recognize(draft, magicTarget);
                 if (match != null) {
                     InkStroke shape=new InkStroke("shape", match.kind, argb, width);
                     shape.sampleRaw(match.x0, match.y0, 0);

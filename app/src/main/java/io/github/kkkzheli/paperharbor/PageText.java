@@ -33,6 +33,8 @@ final class PageText {
     float size = 22f;
     int argb = 0xff22272e;
     String text = "";
+    /** LaTeX source when this block is a formula; empty means ordinary text. */
+    String tex = "";
     String font = "serif";
     boolean bold, italic, underline;
     int align; // 0 left, 1 centre, 2 right
@@ -93,7 +95,21 @@ final class PageText {
 
     PageText copy() {
         PageText t = of(x, y, text, size, argb, font, bold, italic, underline, align, w);
+        t.tex = tex;
         return t;
+    }
+
+    /** Marks this block as a formula; the page then typesets {@code source} instead of the text. */
+    void formula(String source) { tex = source == null ? "" : source; }
+
+    boolean isFormula() { return tex != null && !tex.isEmpty(); }
+
+    private void prepareMathPaint() {
+        paint.setTextSize(size);
+        paint.setColor(argb);
+        paint.setTypeface(typeface(font, bold, italic));
+        paint.setUnderlineText(false);
+        paint.setStyle(Paint.Style.FILL);
     }
 
     void move(float dx, float dy) { x += dx; y += dy; layout = null; }
@@ -126,6 +142,15 @@ final class PageText {
     }
 
     void draw(Canvas c) {
+        if (isFormula()) {
+            prepareMathPaint();
+            int save = c.save();
+            try {
+                c.translate(x, y);
+                MathLayout.draw(c, paint, tex, 0, 0, size, align, w);
+            } finally { c.restoreToCount(save); }
+            return;
+        }
         if (text == null || text.isEmpty()) return;
         StaticLayout l = build();
         int save = c.save();
@@ -137,6 +162,13 @@ final class PageText {
 
     /** Page-space bounds of the laid-out block. */
     RectF bounds() {
+        if (isFormula()) {
+            prepareMathPaint();
+            float[] m = MathLayout.measure(tex, paint, size);
+            float width = Math.max(w, m[0]);
+            box.set(x, y, x + width, y + m[1] + m[2]);
+            return box;
+        }
         if (text == null || text.isEmpty()) { box.set(x, y, x, y); return box; }
         StaticLayout l = build();
         box.set(x, y, x + l.getWidth(), y + l.getHeight());
@@ -144,7 +176,7 @@ final class PageText {
     }
 
     boolean hit(float px, float py) {
-        if (text == null || text.isEmpty()) return false;
+        if (!isFormula() && (text == null || text.isEmpty())) return false;
         RectF b = new RectF(bounds());
         b.inset(-6, -4);
         return b.contains(px, py);
@@ -152,10 +184,12 @@ final class PageText {
 
     JSONObject encode() {
         try {
-            return new JSONObject().put("x", (double)x).put("y", (double)y).put("w", (double)w)
+            JSONObject o = new JSONObject().put("x", (double)x).put("y", (double)y).put("w", (double)w)
                 .put("size", (double)size).put("argb", argb).put("text", text)
                 .put("font", font).put("bold", bold).put("italic", italic)
                 .put("underline", underline).put("align", align);
+            if (isFormula()) o.put("tex", tex);
+            return o;
         } catch (JSONException e) { throw new IllegalStateException("Cannot encode text", e); }
     }
 
@@ -170,6 +204,8 @@ final class PageText {
         t.size = clamp((float)o.optDouble("size", 22), MIN_SIZE, MAX_SIZE);
         t.argb = o.optInt("argb", Color.BLACK);
         t.text = value;
+        String formula = o.optString("tex", "");
+        t.tex = formula.length() > 20000 ? "" : formula;
         t.font = fontName(o.optString("font", "serif"));
         t.bold = o.optBoolean("bold");
         t.italic = o.optBoolean("italic");

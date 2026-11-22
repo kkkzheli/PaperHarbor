@@ -183,6 +183,7 @@ final class StoreJson {
                 for (int j = 0; j < texts.length(); ++j) {
                     JSONObject t = texts.getJSONObject(j);
                     string(t, "text", 20000);
+                    if (t.has("tex")) string(t, "tex", 20000);
                     number(t.get("x"), -w, 2.0 * w); number(t.get("y"), -h, 2.0 * h);
                     number(t.get("w"), 0, 20000); number(t.get("size"), PageText.MIN_SIZE, PageText.MAX_SIZE);
                     whole(t, "argb", Integer.MIN_VALUE, Integer.MAX_VALUE);

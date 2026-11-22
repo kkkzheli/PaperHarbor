@@ -67,6 +67,17 @@ public final class Store {
                 Files.isDirectory(d.resolve("audio"), NOFOLLOW_LINKS), "Notebook is missing"); return d.toFile();
     }
 
+    /** Recursive byte size of a note folder, used by the shelf cards and the usage row. */
+    public static long size(File file) {
+        if (file == null || !file.exists()) return 0;
+        if (file.isFile()) return file.length();
+        File[] children = file.listFiles();
+        if (children == null) return 0;
+        long total = 0;
+        for (File child : children) total += size(child);
+        return total;
+    }
+
     public static JSONObject page(int w, int h, String paper, int pdfIndex) throws JSONException {
         return page(w, h, paper, pdfIndex, Ui.PAPER);
     }

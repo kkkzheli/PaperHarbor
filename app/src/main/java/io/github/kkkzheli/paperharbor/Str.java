@@ -74,9 +74,17 @@ final class Str {
 
   static String openNote(String title) { return english() ? "Open note: " + title : "打开笔记：" + title; }
 
-  static String noteMeta(int pages, String date) {
-    if (english()) return pages + (pages == 1 ? " page" : " pages") + (date.isEmpty() ? "" : " · " + date);
-    return pages + " 页" + (date.isEmpty() ? "" : " · " + date);
+  static String noteMeta(int pages, String bytes, String date) {
+    String head = english() ? pages + (pages == 1 ? " page" : " pages") + " · " + bytes
+        : pages + " 页 · " + bytes;
+    return date.isEmpty() ? head : head + "\n" + date;
+  }
+
+  /** A file size with one decimal, shared by the shelf cards and the settings usage row. */
+  static String bytes(long bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return String.format(Locale.ROOT, "%.1f KB", bytes / 1024f);
+    return String.format(Locale.ROOT, "%.1f MB", bytes / (1024f * 1024f));
   }
 
   static String cardBadge(int pages) { return english() ? pages + "p" : pages + " 页"; }
@@ -129,6 +137,12 @@ final class Str {
 
   static String date(long millis) {
     String pattern = english() ? "MMM d" : "M月d日";
+    return new SimpleDateFormat(pattern, english() ? Locale.US : Locale.CHINA).format(new Date(millis));
+  }
+
+  /** Full local date and time, used on the shelf cards. */
+  static String dateTime(long millis) {
+    String pattern = english() ? "d MMM yyyy, HH:mm" : "yyyy年M月d日 HH:mm";
     return new SimpleDateFormat(pattern, english() ? Locale.US : Locale.CHINA).format(new Date(millis));
   }
 
@@ -195,7 +209,20 @@ final class Str {
     put("随手画个大概：直的变直线，圆的变圆，方框变矩形，三角形也会自动规整。认不出来时保留你的原笔迹。",
         "Sketch roughly: a straight scribble becomes a line, a loop becomes a circle, a box becomes a "
             + "rectangle and a triangle is tidied up. If nothing matches, your own stroke is kept.");
-    put("自由", "Freehand");
+    put("随手画个大概，再选要还原成哪种图形；「自由」会按形状自动判断，认不出来时保留原笔迹。",
+        "Sketch roughly, then pick the shape to turn it into. Auto guesses from the drawing and keeps "
+            + "your own stroke when nothing fits.");
+    put("再点一次可以选择要还原的图形", "Tap again to choose which shape to make");
+    put("魔法笔：", "Magic pen: ");
+    put("正在保存图片…", "Saving image…");
+    put("已保存到相册 Pictures/PaperHarbor", "Saved to Pictures/PaperHarbor");
+    put("先输入 LaTeX 公式", "Type a LaTeX formula first");
+    put("这一块将按公式排版，再点一次可取消",
+        "This block is typeset as a formula; tap again to undo");
+    put("已改回普通文本", "Back to plain text");
+    put("无法创建图片", "Cannot create the image");
+    put("无法写入图片", "Cannot write the image");
+    put("自由", "Auto");
     put("页面", "Pages");
     put("添加页面", "Add page");
     put("横线", "Ruled");

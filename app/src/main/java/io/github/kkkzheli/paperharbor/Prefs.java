@@ -48,6 +48,19 @@ final class Prefs {
 
   void setShape(String kind) { p.edit().putString("shape", kind).apply(); }
 
+  /** What the magic pen should produce: {@code auto} guesses, a named kind is forced. */
+  String magicShape() {
+    String value = p.getString("magic.shape", "auto");
+    return magicKind(value) ? value : "auto";
+  }
+
+  void setMagicShape(String kind) { p.edit().putString("magic.shape", magicKind(kind) ? kind : "auto").apply(); }
+
+  private static boolean magicKind(String value) {
+    return "auto".equals(value) || "line".equals(value) || "rect".equals(value)
+        || "circle".equals(value) || "ellipse".equals(value) || "triangle".equals(value);
+  }
+
   boolean stylusOnly() { return p.getBoolean("stylus.only", false); }
 
   void setStylusOnly(boolean value) { p.edit().putBoolean("stylus.only", value).apply(); }
